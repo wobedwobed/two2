@@ -2,4 +2,7 @@
 (?<=\b(?:\w+\.)?)dbo\.\[?faktsprzedaz\]?
 
 
-\b(?:dbo|\[dbo\])(?:\.)?(?:faktsprzedaz|\[faktsprzedaz\])\b
+^([a-zA-Z0-9_]+\.)?(dbo|\[dbo\])\.(faktsprzedaz|\[faktsprzedaz\])$
+
+
+
