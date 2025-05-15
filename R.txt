@@ -1,1 +1,2 @@
 (?:\b.*\.)?\b(?:dbo|\[dbo\])\.(?:faktsprzedaz|\[faktsprzedaz\])(?:\b.*)?
+(?<=\b(?:\w+\.)?)dbo\.\[?faktsprzedaz\]?
