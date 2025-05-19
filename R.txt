@@ -1,11 +1,35 @@
-(?:\b.*\.)?\b(?:dbo|\[dbo\])\.(?:faktsprzedaz|\[faktsprzedaz\])(?:\b.*)?
-(?<=\b(?:\w+\.)?)dbo\.\[?faktsprzedaz\]?
 
-
-^([a-zA-Z0-9_]+\.)?(dbo|\[dbo\])\.(faktsprzedaz|\[faktsprzedaz\])$
-
-
-^([a-zA-Z0-9_]+\.)?(dbo|\[dbo\])\.(faktsprzedaz|\[faktsprzedaz\])[^a-zA-Z]$
-
-
-
+Sub HighlightTextInBlue()
+    Dim searchText As String
+    Dim doc As Document
+    Dim rng As Range
+    
+    ' Set the text to search for
+    searchText = InputBox("Enter the text to highlight:", "Highlight Text")
+    
+    ' Ensure the user enters a search term
+    If searchText = "" Then Exit Sub
+    
+    Set doc = ActiveDocument
+    Set rng = doc.Content
+    
+    ' Clear previous formatting
+    rng.HighlightColorIndex = wdNoHighlight
+    
+    With rng.Find
+        .Text = searchText
+        .Format = True
+        .Forward = True
+        .Wrap = wdFindContinue
+        .MatchCase = False
+        .MatchWholeWord = False
+        .Execute
+        
+        ' Loop through each occurrence
+        Do While .Found
+            rng.HighlightColorIndex = wdBrightBlue
+            rng.Collapse wdCollapseEnd
+            .Execute
+        Loop
+    End With
+End Sub
