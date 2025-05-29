@@ -1,0 +1,13 @@
+XPathExpression
+-----------------------------------
+/bookstore
+/bookstore/book[1]
+/bookstore/book[1]/@category="fiction"
+/bookstore/book[1]/title
+/bookstore/book[1]/title/text()="Harry Potter"
+/bookstore/book[1]/author
+/bookstore/book[1]/author/text()="J.K. Rowling"
+/bookstore/book[2]
+/bookstore/book[2]/@category="nonfiction"
+/bookstore/book[2]/title
+/bookstore/book[2]/title/text()="Sapiens"
