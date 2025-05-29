@@ -1,0 +1,16 @@
+static void InsertXPathBatch(List<string> xpaths)
+{
+    using (SqlConnection connection = new SqlConnection(connectionString))
+    {
+        connection.Open();
+        foreach (string xpath in xpaths)
+        {
+            string query = "INSERT INTO XPathExpressions (XPathExpression) VALUES (@XPathExpression)";
+            using (SqlCommand command = new SqlCommand(query, connection))
+            {
+                command.Parameters.AddWithValue("@XPathExpression", xpath);
+                command.ExecuteNonQuery();
+            }
+        }
+    }
+}
