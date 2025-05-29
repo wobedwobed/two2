@@ -1,0 +1,10 @@
+static void Main(string[] args)
+{
+    XmlDocument doc = new XmlDocument();
+    doc.Load("path/to/your/file.xml"); // Load from file
+    GenerateXPath(doc.DocumentElement, "");
+    foreach (string xpath in xpathExpressions)
+    {
+        Console.WriteLine(xpath);
+    }
+}
