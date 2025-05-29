@@ -1,0 +1,5 @@
+CREATE TABLE XPathExpressions (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    XPathExpression NVARCHAR(MAX) NOT NULL,
+    CreatedAt DATETIME DEFAULT GETDATE()
+);
