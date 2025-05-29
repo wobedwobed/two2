@@ -1,0 +1,110 @@
+using System;
+using System.Collections.Generic;
+using System.Xml;
+
+class Program
+{
+    // List to store XPath expressions
+    static List<string> xpathExpressions = new List<string>();
+
+    static void Main(string[] args)
+    {
+        // Example XML document
+        string xml = @"
+        <bookstore>
+            <book category=""fiction"">
+                <title>Harry Potter</title>
+                <author>J.K. Rowling</author>
+            </book>
+            <book category=""nonfiction"">
+                <title>Sapiens</title>
+            </book>
+        </bookstore>";
+
+        // Parse XML
+        XmlDocument doc = new XmlDocument();
+        doc.LoadXml(xml);
+
+        // Generate XPath expressions
+        GenerateXPath(doc.DocumentElement, "");
+
+        // Output results
+        foreach (string xpath in xpathExpressions)
+        {
+            Console.WriteLine(xpath);
+        }
+    }
+
+    static void GenerateXPath(XmlNode node, string currentPath)
+    {
+        if (node == null)
+            return;
+
+        // Handle different node types
+        switch (node.NodeType)
+        {
+            case XmlNodeType.Element:
+                // Build XPath for the element
+                string tagName = node.Name;
+                string newPath = currentPath + "/" + tagName;
+
+                // Calculate sibling index if needed
+                int index = CalculateSiblingIndex(node);
+                if (index > 0)
+                {
+                    newPath += $"[{index}]";
+                }
+
+                // Add element XPath
+                xpathExpressions.Add(newPath);
+
+                // Process attributes
+                if (node.Attributes != null)
+                {
+                    foreach (XmlAttribute attr in node.Attributes)
+                    {
+                        string attrPath = $"{newPath}/@{attr.Name}=\"{attr.Value}\"";
+                        xpathExpressions.Add(attrPath);
+                    }
+                }
+
+                // Process child nodes
+                foreach (XmlNode child in node.ChildNodes)
+                {
+                    GenerateXPath(child, newPath);
+                }
+                break;
+
+            case XmlNodeType.Text:
+                // Add text node XPath if content is non-empty
+                if (!string.IsNullOrWhiteSpace(node.Value))
+                {
+                    string textPath = $"{currentPath}/text()=\"{node.Value.Trim()}\"";
+                    xpathExpressions.Add(textPath);
+                }
+                break;
+
+            // Optionally handle other node types (e.g., comments, CDATA)
+            default:
+                break;
+        }
+    }
+
+    static int CalculateSiblingIndex(XmlNode node)
+    {
+        if (node.ParentNode == null)
+            return 0;
+
+        // Count preceding siblings with the same tag name
+        int count = 0;
+        foreach (XmlNode sibling in node.ParentNode.ChildNodes)
+        {
+            if (sibling == node)
+                break;
+            if (sibling.NodeType == XmlNodeType.Element && sibling.Name == node.Name)
+                count++;
+        }
+
+        return count > 0 ? count + 1 : 0;
+    }
+}
