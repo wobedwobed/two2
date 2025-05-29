@@ -1,0 +1,14 @@
+-- Input XML
+DECLARE @xml XML = '
+<bookstore>
+    <book category="fiction">
+        <title>Harry Potter</title>
+        <author>J.K. Rowling</author>
+    </book>
+    <book category="nonfiction">
+        <title>Sapiens</title>
+    </book>
+</bookstore>';
+
+-- Query to select the 'Sapiens' string
+SELECT @xml.value('(/bookstore/book[2]/title/text())[1]', 'NVARCHAR(MAX)') AS Title;
