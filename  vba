@@ -1,0 +1,30 @@
+Sub ZmienKolorWszystkichSlowaZTablicy()
+    Dim zakres As Range
+    Dim komorka As Range
+    Dim szukaneSlowa() As Variant
+    Dim i As Integer
+    Dim start As Integer
+    Dim pozycja As Integer
+    Dim dlugosc As Integer
+
+    ' Ustaw tablicę szukanych słów (możesz zmienić lub rozbudować)
+    szukaneSlowa = Array("test", "przykład", "Excel", "VBA") ' Tutaj wpisz swoje słowa
+
+    ' Ustaw zakres (np. A1:D10)
+    Set zakres = Range("A1:D10") ' Zmień zakres według potrzeb
+
+    For Each komorka In zakres
+        If Not komorka.Value = "" Then
+            For i = LBound(szukaneSlowa) To UBound(szukaneSlowa)
+                dlugosc = Len(szukaneSlowa(i))
+                start = 1
+                pozycja = InStr(start, komorka.Value, szukaneSlowa(i), vbTextCompare)
+                Do While pozycja > 0
+                    komorka.Characters(pozycja, dlugosc).Font.Color = RGB(255, 0, 0)
+                    start = pozycja + dlugosc
+                    pozycja = InStr(start, komorka.Value, szukaneSlowa(i), vbTextCompare)
+                Loop
+            Next i
+        End If
+    Next komorka
+End Sub
