@@ -1,39 +1,50 @@
-Sub ZmienKolorWszystkichSlowaZTablicyRozneKolory()
-    Dim zakres As Range
-    Dim komorka As Range
-    Dim szukaneSlowa() As Variant
-    Dim kolory() As Long
+Sub ZmienKolorWybranychSlow()
+    'Deklaracja zmiennych
+    Dim rng As Range
+    Dim cell As Range
+    Dim slowaKolor() As Variant
     Dim i As Integer
-    Dim start As Integer
+    Dim tekst As String
     Dim pozycja As Integer
-    Dim dlugosc As Integer
-
-    ' Ustaw tablicę szukanych słów
-    szukaneSlowa = Array("test", "przykład", "Excel", "VBA") ' <-- tutaj wpisz swoje słowa
-
-    ' Ustaw tablicę kolorów (RGB: Red, Green, Blue)
-    kolory = Array(RGB(255, 0, 0),    ' Czerwony
-                   RGB(0, 128, 0),    ' Zielony
-                   RGB(0, 0, 255),    ' Niebieski
-                   RGB(255, 0, 255))  ' Magenta
-
-    ' Ustaw zakres (np. A1:D10)
-    Set zakres = Range("A1:D10") ' <-- zmień zakres według potrzeb
-
-    For Each komorka In zakres
-        If Not komorka.Value = "" Then
-            For i = LBound(szukaneSlowa) To UBound(szukaneSlowa)
-                If i <= UBound(kolory) Then ' Zabezpieczenie, żeby nie wyjść poza zakres kolorów
-                    dlugosc = Len(szukaneSlowa(i))
-                    start = 1
-                    pozycja = InStr(start, komorka.Value, szukaneSlowa(i), vbTextCompare)
-                    Do While pozycja > 0
-                        komorka.Characters(pozycja, dlugosc).Font.Color = kolory(i)
-                        start = pozycja + dlugosc
-                        pozycja = InStr(start, komorka.Value, szukaneSlowa(i), vbTextCompare)
-                    Loop
-                End If
+    
+    'Tablica słów i odpowiadających im kolorów (indeksy kolorów VBA)
+    slowaKolor = Array( _
+        Array("błąd", vbRed), _
+        Array("ostrzeżenie", vbBlue), _
+        Array("sukces", vbGreen) _
+    )
+    
+    'Pobierz zaznaczenie
+    Set rng = Selection
+    
+    'Iteracja przez każdą komórkę w zaznaczeniu
+    For Each cell In rng
+        If Not IsEmpty(cell) Then
+            tekst = cell.Value
+            
+            'Iteracja przez tablicę słów
+            For i = LBound(slowaKolor) To UBound(slowaKolor)
+                Dim slowo As String
+                Dim kolor As Long
+                slowo = slowaKolor(i)(0)
+                kolor = slowaKolor(i)(1)
+                
+                'Szukaj słowa w tekście
+                pozycja = InStr(1, tekst, slowo, vbTextCompare)
+                
+                'Dopóki znajduje słowo w tekście
+                While pozycja > 0
+                    'Zmień kolor czcionki dla znalezionego słowa
+                    With cell.Characters(Start:=pozycja, Length:=Len(slowo)).Font
+                        .Color = kolor
+                    End With
+                    
+                    'Szukaj kolejnego wystąpienia słowa
+                    pozycja = InStr(pozycja + 1, tekst, slowo, vbTextCompare)
+                Wend
             Next i
         End If
-    Next komorka
+    Next cell
+    
+    MsgBox "Zmiana kolorów zakończona!", vbInformation
 End Sub
