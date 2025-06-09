@@ -1,0 +1,38 @@
+Sub ColorBracketedTextRed()
+    Dim rng As Range
+    Dim cell As Range
+    Dim startPos As Long
+    Dim endPos As Long
+    Dim text As String
+    
+    ' Set the range to the current selection
+    Set rng = Selection
+    
+    ' Iterate through each cell in the selected range
+    For Each cell In rng
+        If Not IsEmpty(cell) Then
+            text = cell.Value
+            startPos = 1
+            
+            ' Loop to find all instances of bracketed text in the cell
+            Do
+                ' Find opening bracket
+                startPos = InStr(startPos, text, "[")
+                If startPos = 0 Then Exit Do
+                
+                ' Find closing bracket
+                endPos = InStr(startPos, text, "]")
+                If endPos = 0 Then Exit Do
+                
+                ' Change color of text between brackets to red
+                cell.Characters(startPos + 1, endPos - startPos - 1).Font.Color = vbRed
+                
+                ' Move start position to after the closing bracket
+                startPos = endPos + 1
+            Loop Until startPos > Len(text)
+        End If
+    Next cell
+    
+    ' Confirmation message
+    MsgBox "All bracketed text has been colored red.", vbInformation
+End Sub
