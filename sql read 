@@ -1,0 +1,55 @@
+using System;
+using System.Data.SqlClient;
+using System.IO;
+
+namespace SqlFileImporter
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            // Set the root directory and connection string
+            string rootDirectory = @"C:\Path\To\Your\SqlFiles";
+            string connectionString = "Data Source=YOUR_SERVER;Initial Catalog=YOUR_DATABASE;Integrated Security=True;";
+
+            // Get all .sql files recursively
+            string[] sqlFiles = Directory.GetFiles(rootDirectory, "*.sql", SearchOption.AllDirectories);
+
+            foreach (string filePath in sqlFiles)
+            {
+                try
+                {
+                    string fileName = Path.GetFileName(filePath);
+                    string scriptContent = File.ReadAllText(filePath);
+
+                    InsertSqlScript(connectionString, fileName, scriptContent);
+
+                    Console.WriteLine($"Inserted: {fileName}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error processing {filePath}: {ex.Message}");
+                }
+            }
+
+            Console.WriteLine("Done.");
+        }
+
+        static void InsertSqlScript(string connectionString, string fileName, string scriptContent)
+        {
+            using (SqlConnection conn = new SqlConnection(connectionString))
+            {
+                string query = "INSERT INTO SqlScripts (FileName, ScriptContent) VALUES (@FileName, @ScriptContent)";
+
+                using (SqlCommand cmd = new SqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@FileName", fileName);
+                    cmd.Parameters.AddWithValue("@ScriptContent", scriptContent);
+
+                    conn.Open();
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+    }
+}
