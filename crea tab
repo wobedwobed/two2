@@ -1,0 +1,5 @@
+CREATE TABLE SqlScripts (
+    Id INT IDENTITY PRIMARY KEY,
+    FileName NVARCHAR(255),
+    ScriptContent NVARCHAR(MAX)
+)
