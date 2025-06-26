@@ -1,0 +1,14 @@
+$yesterday = (Get-Date).AddDays(-1).Date
+$today = (Get-Date).Date
+
+# Get filtered files, sort by path and name
+$files = Get-ChildItem -Path . -File |
+    Where-Object { $_.LastWriteTime -ge $yesterday -and $_.LastWriteTime -lt $today } |
+    Sort-Object DirectoryName, Name
+
+# Enumerate and format output
+$i = 1
+$files | ForEach-Object {
+    "$($_.DirectoryName)\$($_.Name) # $($_.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')) # $i"
+    $i++
+} | Out-File -FilePath C:\files_changed_yesterday.txt -Encoding UTF8
