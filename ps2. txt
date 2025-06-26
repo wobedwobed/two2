@@ -1,0 +1,6 @@
+$yesterday = (Get-Date).AddDays(-1).Date
+$today = (Get-Date).Date
+Get-ChildItem -Path . -File | 
+    Where-Object { $_.LastWriteTime -ge $yesterday -and $_.LastWriteTime -lt $today } | 
+    ForEach-Object { "$($_.DirectoryName)\$($_.Name) # $($_.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))" } | 
+    Out-File -FilePath C:\files_changed_yesterday.txt -Encoding UTF8
