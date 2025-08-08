@@ -1,0 +1,30 @@
+Sub FilterZapytanie6ByActiveCell()
+    Dim wsSource As Worksheet
+    Dim wsTarget As Worksheet
+    Dim tbl As ListObject
+    Dim filterValue As Variant
+
+    ' Step 1: Get value from the active cell
+    Set wsSource = ActiveSheet
+    filterValue = ActiveCell.Value
+
+    ' Step 2: Switch to "ppHist" worksheet
+    On Error GoTo ErrHandler
+    Set wsTarget = ThisWorkbook.Worksheets("ppHist")
+    wsTarget.Activate
+
+    ' Step 3: Get the table "Zapytanie6" and apply filter on first column
+    Set tbl = wsTarget.ListObjects("Zapytanie6")
+    
+    ' Clear previous filters (optional)
+    If tbl.AutoFilter.FilterMode Then
+        tbl.AutoFilter.ShowAllData
+    End If
+    
+    ' Apply filter to the first column in table
+    tbl.Range.AutoFilter Field:=1, Criteria1:=filterValue
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error: " & Err.Description, vbCritical
+End Sub
