@@ -1,0 +1,44 @@
+Sub BorderConsecutiveGroups()
+    ' This subroutine borders groups of consecutive cells with the same value in the active cell's column.
+    ' Assumes values are ordered (sorted), so identical values are consecutive.
+    ' Borders are added around each group (perimeter only).
+
+    Dim colNum As Long
+    colNum = ActiveCell.Column
+    
+    Dim colLetter As String
+    colLetter = Split(ActiveCell.Address, "$")(1)  ' Gets the column letter, e.g., "A"
+    
+    Dim lastRow As Long
+    lastRow = Cells(Rows.Count, colNum).End(xlUp).Row  ' Find the last row with data in the column
+    
+    If lastRow < 1 Then
+        MsgBox "No data in the column."
+        Exit Sub
+    End If
+    
+    Dim startRow As Long
+    startRow = 1  ' Assume data starts from row 1; adjust if header is present
+    
+    Dim currentVal As Variant
+    currentVal = Cells(startRow, colNum).Value
+    
+    Dim i As Long
+    For i = startRow + 1 To lastRow + 1  ' Loop to lastRow + 1 to capture the final group
+        Dim cellVal As Variant
+        cellVal = Cells(i, colNum).Value
+        
+        If cellVal <> currentVal Or i > lastRow Then
+            ' Border the group from startRow to i-1
+            Dim groupRange As Range
+            Set groupRange = Range(Cells(startRow, colNum), Cells(i - 1, colNum))
+            
+            ' Add border around the entire group
+            groupRange.BorderAround LineStyle:=xlContinuous, Weight:=xlThin, ColorIndex:=xlAutomatic
+            
+            ' Reset for next group
+            startRow = i
+            currentVal = cellVal
+        End If
+    Next i
+End Sub
