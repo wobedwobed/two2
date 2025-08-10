@@ -1,0 +1,38 @@
+Sub FrameGroupsInActiveColumn()
+    Dim colLetter As String
+    Dim colNum As Long
+    Dim ws As Worksheet
+    Dim lastRow As Long
+    Dim currentValue As Variant
+    Dim startRow As Long
+    Dim rowIndex As Long
+    
+    Set ws = ActiveSheet
+    
+    ' 1) Get active cell’s column letter
+    colLetter = Split(ws.Cells(1, ActiveCell.Column).Address(True, False), "$")(0)
+    colNum = ActiveCell.Column
+    
+    ' Find last used row in that column
+    lastRow = ws.Cells(ws.Rows.Count, colNum).End(xlUp).Row
+    
+    currentValue = ws.Cells(1, colNum).Value
+    startRow = 1
+    
+    ' 2) Iterate through all rows in the column
+    For rowIndex = 2 To lastRow + 1
+        If ws.Cells(rowIndex, colNum).Value <> currentValue Then
+            ' 3) Surround all same values with a frame (border)
+            With ws.Range(ws.Cells(startRow, colNum), ws.Cells(rowIndex - 1, colNum)).Borders
+                .LineStyle = xlContinuous
+                .Weight = xlThin
+                .Color = RGB(0, 0, 0)
+            End With
+            ' Update to new value group
+            currentValue = ws.Cells(rowIndex, colNum).Value
+            startRow = rowIndex
+        End If
+    Next rowIndex
+    
+    MsgBox "Done! Groups in column " & colLetter & " framed."
+End Sub
