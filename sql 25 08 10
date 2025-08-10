@@ -1,0 +1,16 @@
+SELECT
+    pf.name AS FolderName,
+    pj.name AS ProjectName,
+    p.name AS PackageName,
+    CONCAT('/', pf.name, '/', pj.name, '/', p.name) AS PackagePath,
+    pj.last_deployed_time AS DeploymentDate
+FROM
+    SSISDB.catalog.folders pf
+    INNER JOIN SSISDB.catalog.projects pj 
+        ON pf.folder_id = pj.folder_id
+    INNER JOIN SSISDB.catalog.packages p 
+        ON pj.project_id = p.project_id
+ORDER BY
+    pf.name,
+    pj.name,
+    p.name;
