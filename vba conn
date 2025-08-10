@@ -1,0 +1,46 @@
+Sub InsertToSQLServer(v As String)
+    Dim conn As Object
+    Dim cmd As Object
+    Dim connectionString As String
+    Dim sqlQuery As String
+    
+    On Error GoTo ErrorHandler
+    
+    ' Create ADO connection object
+    Set conn = CreateObject("ADODB.Connection")
+    
+    ' Set connection string using Windows Authentication
+    connectionString = "Provider=SQLOLEDB;Data Source=aaa;" & _
+                      "Initial Catalog=bbb;Integrated Security=SSPI;"
+    
+    ' Open connection
+    conn.Open connectionString
+    
+    ' Create command object
+    Set cmd = CreateObject("ADODB.Command")
+    With cmd
+        .ActiveConnection = conn
+        .CommandType = 1 ' adCmdText
+        ' SQL query to insert the string value
+        .CommandText = "INSERT INTO test.test1 (column_name) VALUES (?)"
+        ' Replace column_name with your actual column name
+        .Parameters.Append .CreateParameter("@p1", 200, 1, 255, v) ' adVarChar
+        .Execute
+    End With
+    
+    ' Clean up
+    conn.Close
+    Set cmd = Nothing
+    Set conn = Nothing
+    
+    MsgBox "Data inserted successfully!", vbInformation
+    Exit Sub
+
+ErrorHandler:
+    If Not conn Is Nothing Then
+        If conn.State = 1 Then conn.Close
+    End If
+    Set cmd = Nothing
+    Set conn = Nothing
+    MsgBox "Error: " & Err.Description, vbCritical
+End Sub
