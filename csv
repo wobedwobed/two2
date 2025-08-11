@@ -1,0 +1,72 @@
+Sub SaveSelectionAsPipeDelimitedCSV()
+    Dim rng As Range
+    Dim ws As Worksheet
+    Dim filePath As String
+    Dim fileNum As Integer
+    Dim row As Range
+    Dim cell As Range
+    Dim outputLine As String
+    Dim fileName As String
+    
+    ' Check if a range is selected
+    If TypeName(Selection) <> "Range" Then
+        MsgBox "Please select a range first.", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Set the selected range
+    Set rng = Selection
+    
+    ' Prompt for file save location
+    With Application.FileDialog(msoFileDialogSaveAs)
+        .Filters.Clear
+        .Filters.Add "CSV Files", "*.csv"
+        .Title = "Save CSV File"
+        .InitialFileName = "Output.csv"
+        If .Show = True Then
+            filePath = .SelectedItems(1)
+        Else
+            Exit Sub ' User cancelled
+        End If
+    End With
+    
+    ' Get free file number
+    fileNum = FreeFile
+    
+    ' Open file for writing
+    Open filePath For Output As #fileNum
+    
+    ' Process each row in selection
+    For Each row In rng.Rows
+        outputLine = ""
+        For Each cell In row.Cells
+            Dim cellValue As String
+            ' Treat first row as column names (still quoted) and apply date formatting for other rows
+            If row.Row = rng.Rows(1).row Then
+                ' Column names: treat as text, quote, and escape quotes
+                cellValue = """" & Replace(cell.Text, """", """""") & """"
+            Else
+                ' Data rows: check for dates
+                If IsDate(cell.Value) Then
+                    cellValue = """" & Format(cell.Value, "yyyy-mm-dd") & """"
+                Else
+                    cellValue = """" & Replace(cell.Text, """", """""") & """"
+                End If
+            End If
+            
+            ' Add pipe delimiter if not first column
+            If outputLine <> "" Then
+                outputLine = outputLine & "|"
+            End If
+            outputLine = outputLine & cellValue
+        Next cell
+        
+        ' Write line to file
+        Print #fileNum, outputLine
+    Next row
+    
+    ' Close file
+    Close #fileNum
+    
+    MsgBox "CSV file has been saved successfully!", vbInformation
+End Sub
