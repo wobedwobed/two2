@@ -1,0 +1,39 @@
+SELECT 
+    s.name AS SchemaName,
+    t.name AS TableName,
+    t.create_date AS CreationDate,
+    p.rows AS RowCount
+FROM 
+    sys.tables t
+    INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+    INNER JOIN sys.partitions p ON t.object_id = p.object_id
+WHERE 
+    p.index_id IN (0, 1) -- 0: Heap, 1: Clustered Index
+ORDER BY 
+    s.name, t.name;
+
+---
+SELECT 
+    s.name AS SchemaName,
+    t.name AS TableName,
+    t.create_date AS CreationDate,
+    p.rows AS RowCount,
+    c.name AS ColumnName,
+    TYPE_NAME(c.user_type_id) AS DataType,
+    CASE 
+        WHEN c.max_length = -1 THEN 'MAX'
+        WHEN TYPE_NAME(c.user_type_id) IN ('varchar', 'nvarchar', 'char', 'nchar') 
+        THEN CAST(c.max_length / (CASE WHEN TYPE_NAME(c.user_type_id) IN ('nvarchar', 'nchar') THEN 2 ELSE 1 END) AS VARCHAR(10))
+        WHEN TYPE_NAME(c.user_type_id) IN ('decimal', 'numeric') 
+        THEN CAST(c.precision AS VARCHAR(10)) + ',' + CAST(c.scale AS VARCHAR(10))
+        ELSE CAST(c.max_length AS VARCHAR(10))
+    END AS DataTypeLength
+FROM 
+    sys.tables t
+    INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+    INNER JOIN sys.partitions p ON t.object_id = p.object_id
+    INNER JOIN sys.columns c ON t.object_id = c.object_id
+WHERE 
+    p.index_id IN (0, 1) -- 0: Heap, 1: Clustered Index
+ORDER BY 
+    s.name, t.name, c.column_id;
