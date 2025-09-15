@@ -1,0 +1,35 @@
+DECLARE @TableName NVARCHAR(128) = 'YourTableName'; -- Replace with your table name
+DECLARE @SchemaName NVARCHAR(128) = 'dbo'; -- Replace with your schema name
+DECLARE @SQL NVARCHAR(MAX) = '';
+DECLARE @ColumnName NVARCHAR(128);
+DECLARE @DataType NVARCHAR(128);
+
+-- Cursor to iterate through all string-type columns in the table
+DECLARE column_cursor CURSOR FOR
+SELECT c.name, t.name
+FROM sys.columns c
+JOIN sys.types t ON c.system_type_id = t.system_type_id
+WHERE c.object_id = OBJECT_ID(@SchemaName + '.' + @TableName)
+AND t.name IN ('char', 'varchar', 'nchar', 'nvarchar');
+
+OPEN column_cursor;
+FETCH NEXT FROM column_cursor INTO @ColumnName, @DataType;
+
+-- Build dynamic SQL to update 'null' (case-insensitive) to NULL
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    SET @SQL = @SQL + 
+        'UPDATE ' + QUOTENAME(@SchemaName) + '.' + QUOTENAME(@TableName) + 
+        ' SET ' + QUOTENAME(@ColumnName) + ' = NULL' +
+        ' WHERE LOWER(' + QUOTENAME(@ColumnName) + ') = ''null''; ';
+    FETCH NEXT FROM column_cursor INTO @ColumnName, @DataType;
+END;
+
+CLOSE column_cursor;
+DEALLOCATE column_cursor;
+
+-- Print the generated SQL for review
+PRINT @SQL;
+
+-- Execute the generated SQL
+EXEC sp_executesql @SQL;
