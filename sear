@@ -1,0 +1,80 @@
+```csharp
+using System;
+using System.IO;
+using System.Data.SqlClient;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        if (args.Length != 6)
+        {
+            Console.WriteLine("Usage: Program.exe <dirMain> <fileType> <directoryString> <sqlServerAddress> <sqlDatabase> <schemaAndTable>");
+            return;
+        }
+
+        string dirMain = args[0];
+        string fileType = args[1];
+        string directoryString = args[2];
+        string sqlAddress = args[3];
+        string sqlDatabase = args[4];
+        string tableName = args[5]; // e.g., "dbo.LogTable"
+
+        string connectionString = $"Server={sqlAddress};Database={sqlDatabase};Trusted_Connection=True;";
+
+        string extension = "." + fileType;
+
+        using (SqlConnection connection = new SqlConnection(connectionString))
+        {
+            connection.Open();
+
+            // Get direct subdirectories of dirMain
+            foreach (string subDir in Directory.GetDirectories(dirMain))
+            {
+                DirectoryInfo dirInfo = new DirectoryInfo(subDir);
+
+                // Filter subdirectories whose name contains directoryString
+                if (!dirInfo.Name.Contains(directoryString))
+                    continue;
+
+                // Process files in the filtered subdirectory
+                foreach (string filePath in Directory.EnumerateFiles(subDir, "*" + extension))
+                {
+                    FileInfo fileInfo = new FileInfo(filePath);
+                    DateTime fileModifiedDate = fileInfo.LastWriteTime;
+                    string fileName = fileInfo.Name;
+                    string directoryPath = fileInfo.DirectoryName;
+
+                    int lineNumber = 1;
+
+                    using (StreamReader reader = new StreamReader(filePath))
+                    {
+                        string line;
+                        while ((line = reader.ReadLine()) != null)
+                        {
+                            DateTime insertDate = DateTime.Now;
+
+                            string insertQuery = $"INSERT INTO {tableName} (DirectoryPath, FileName, LineNumber, LineContent, FileModifiedDate, InsertDate) " +
+                                                 "VALUES (@DirectoryPath, @FileName, @LineNumber, @LineContent, @FileModifiedDate, @InsertDate)";
+
+                            using (SqlCommand command = new SqlCommand(insertQuery, connection))
+                            {
+                                command.Parameters.AddWithValue("@DirectoryPath", directoryPath);
+                                command.Parameters.AddWithValue("@FileName", fileName);
+                                command.Parameters.AddWithValue("@LineNumber", lineNumber);
+                                command.Parameters.AddWithValue("@LineContent", line);
+                                command.Parameters.AddWithValue("@FileModifiedDate", fileModifiedDate);
+                                command.Parameters.AddWithValue("@InsertDate", insertDate);
+
+                                command.ExecuteNonQuery();
+                            }
+
+                            lineNumber++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
