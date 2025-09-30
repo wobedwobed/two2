@@ -1,0 +1,9 @@
+CREATE TABLE [dbo].[LogTable] (
+    [Id] INT IDENTITY(1,1) PRIMARY KEY,
+    [DirectoryPath] NVARCHAR(512) NOT NULL,
+    [FileName] NVARCHAR(255) NOT NULL,
+    [LineNumber] INT NOT NULL,
+    [LineContent] NVARCHAR(MAX) NOT NULL,
+    [FileModifiedDate] DATETIME NOT NULL,
+    [InsertDate] DATETIME NOT NULL
+);
