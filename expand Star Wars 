@@ -1,0 +1,13 @@
+DECLARE @tab NVARCHAR(256) = 'dbo.MyTable';  -- Example: Replace with actual schema.table
+DECLARE @sql NVARCHAR(MAX);
+
+SET @sql = 'SELECT TOP(1000) ' + 
+           STUFF((
+               SELECT ', ' + QUOTENAME(COLUMN_NAME) + ' AS ' + QUOTENAME(COLUMN_NAME)
+               FROM INFORMATION_SCHEMA.COLUMNS
+               WHERE TABLE_SCHEMA + '.' + TABLE_NAME = @tab
+               FOR XML PATH(''), TYPE
+           ).value('.', 'NVARCHAR(MAX)'), 1, 2, '') +
+           ' FROM ' + @tab;
+
+SELECT @sql AS GeneratedQuery;
