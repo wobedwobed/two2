@@ -1,0 +1,28 @@
+SELECT 
+    j.job_id,
+    j.name AS job_name,
+    js.step_id,
+    js.step_name,
+    js.subsystem AS step_type,
+    CASE 
+        WHEN js.subsystem = 'SSIS' THEN 
+            COALESCE(
+                NULLIF(PARSENAME(js.command, 4), ''), 
+                NULLIF(PARSENAME(js.command, 3), ''),
+                @@SERVERNAME
+            )
+        ELSE NULL 
+    END AS ssis_server,
+    CASE 
+        WHEN js.subsystem = 'SSIS' THEN 
+            SUBSTRING(
+                js.command,
+                PATINDEX('%/ISSERVER %', js.command) + 10,
+                LEN(js.command) - PATINDEX('%/ISSERVER %', js.command) - 11
+            )
+        ELSE NULL 
+    END AS ssis_package_path
+FROM msdb.dbo.sysjobs j
+INNER JOIN msdb.dbo.sysjobsteps js ON j.job_id = js.job_id
+WHERE j.enabled = 1  -- Only enabled jobs
+ORDER BY j.name, js.step_id;
