@@ -1,0 +1,78 @@
+CREATE PROCEDURE sp_CheckDatabaseAccess
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Create temporary tables to store results
+    CREATE TABLE #AccessibleDatabases (
+        DatabaseName NVARCHAR(128),
+        ObjectCount INT
+    );
+
+    CREATE TABLE #InaccessibleDatabases (
+        DatabaseName NVARCHAR(128),
+        ErrorMessage NVARCHAR(512)
+    );
+
+    -- Declare variables
+    DECLARE @DBName NVARCHAR(128);
+    DECLARE @SQL NVARCHAR(MAX);
+    
+    -- Cursor to iterate through all databases
+    DECLARE db_cursor CURSOR FOR 
+    SELECT name 
+    FROM sys.databases 
+    WHERE state_desc = 'ONLINE'; -- Only check online databases
+
+    OPEN db_cursor;
+    FETCH NEXT FROM db_cursor INTO @DBName;
+
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        -- Construct dynamic SQL to check access and query sys.objects
+        SET @SQL = '
+            IF HAS_DBACCESS(''' + QUOTENAME(@DBName) + ''') = 1
+            BEGIN
+                INSERT INTO #AccessibleDatabases (DatabaseName, ObjectCount)
+                SELECT ''' + @DBName + ''', COUNT(*) 
+                FROM ' + QUOTENAME(@DBName) + '.sys.objects;
+            END
+            ELSE
+            BEGIN
+                INSERT INTO #InaccessibleDatabases (DatabaseName, ErrorMessage)
+                SELECT ''' + @DBName + ''', ''No access to database'';
+            END';
+
+        -- Execute the dynamic SQL and handle potential errors
+        BEGIN TRY
+            EXEC sp_executesql @SQL;
+        END TRY
+        BEGIN CATCH
+            INSERT INTO #InaccessibleDatabases (DatabaseName, ErrorMessage)
+            SELECT @DBName, ERROR_MESSAGE();
+        END CATCH;
+
+        FETCH NEXT FROM db_cursor INTO @DBName;
+    END;
+
+    CLOSE db_cursor;
+    DEALLOCATE db_cursor;
+
+    -- Return results
+    SELECT 'Accessible Databases' AS ResultType, 
+           DatabaseName, 
+           ObjectCount AS ObjectCount 
+    FROM #AccessibleDatabases
+    UNION ALL
+    SELECT 'Inaccessible Databases' AS ResultType, 
+           DatabaseName, 
+           NULL AS ObjectCount,
+           ErrorMessage
+    FROM #InaccessibleDatabases
+    ORDER BY ResultType, DatabaseName;
+
+    -- Clean up
+    DROP TABLE #AccessibleDatabases;
+    DROP TABLE #InaccessibleDatabases;
+END;
+GO
