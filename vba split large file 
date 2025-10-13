@@ -1,0 +1,90 @@
+Sub SplitSelectedDataIntoFiles()
+
+    Dim source_sheet As Worksheet
+    Set source_sheet = ActiveSheet
+    
+    Dim full_range As Range
+    Set full_range = Selection
+    
+    Dim start_col As Long
+    start_col = full_range.Column
+    
+    Dim end_col As Long
+    end_col = start_col + full_range.Columns.Count - 1
+    
+    Dim total_rows As Long
+    total_rows = full_range.Rows.Count
+    
+    If total_rows < 1 Then
+        MsgBox "Selected range has no rows."
+        Exit Sub
+    End If
+    
+    Dim header_range As Range
+    Set header_range = source_sheet.Range(source_sheet.Cells(1, start_col), source_sheet.Cells(1, end_col))
+    
+    Dim batch_size As Long
+    batch_size = 50000
+    
+    Dim current_start As Long
+    current_start = 1  ' Start from row 1 of the selection (assumed to include headers)
+    
+    Dim iteration As Long
+    iteration = 1
+    
+    Do While current_start <= total_rows
+    
+        Dim new_wb As Workbook
+        Set new_wb = Workbooks.Add
+        
+        Dim new_sheet As Worksheet
+        Set new_sheet = new_wb.Sheets(1)
+        
+        Dim end_row As Long
+        Dim copy_range As Range
+        
+        If iteration = 1 Then
+            ' First batch includes headers
+            end_row = Application.Min(current_start + batch_size - 1, total_rows)
+            Set copy_range = source_sheet.Range(source_sheet.Cells(current_start, start_col), source_sheet.Cells(end_row, end_col))
+            copy_range.Copy
+            new_sheet.Range("A1").PasteSpecial xlPasteAll
+            Application.CutCopyMode = False
+        Else
+            ' Subsequent batches: add headers separately
+            header_range.Copy
+            new_sheet.Range("A1").PasteSpecial xlPasteAll
+            Application.CutCopyMode = False
+            
+            ' Data rows: up to 49999
+            end_row = Application.Min(current_start + batch_size - 2, total_rows)  ' -1 for header, -1 for 0-based
+            Set copy_range = source_sheet.Range(source_sheet.Cells(current_start, start_col), source_sheet.Cells(end_row, end_col))
+            copy_range.Copy
+            new_sheet.Range("A2").PasteSpecial xlPasteAll
+            Application.CutCopyMode = False
+        End If
+        
+        ' Save the new workbook
+        Dim original_path As String
+        original_path = ThisWorkbook.Path
+        
+        Dim original_name As String
+        original_name = Left(ThisWorkbook.Name, InStrRev(ThisWorkbook.Name, ".") - 1)
+        
+        Dim new_filename As String
+        new_filename = original_name & "_" & iteration & ".xlsx"
+        
+        Dim full_path As String
+        full_path = original_path & Application.PathSeparator & new_filename
+        
+        new_wb.SaveAs Filename:=full_path, FileFormat:=xlOpenXMLWorkbook
+        new_wb.Close SaveChanges:=False
+        
+        ' Update start for next batch
+        current_start = end_row + 1
+        
+        iteration = iteration + 1
+    
+    Loop
+
+End Sub
