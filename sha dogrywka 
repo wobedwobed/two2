@@ -1,0 +1,43 @@
+/* --------------------------------------------------------------
+   PARAMETERS – set at the top of the script / proc
+   -------------------------------------------------------------- */
+DECLARE @tab         NVARCHAR(256) = N'dbo.Customers';   -- schema.table
+DECLARE @table_alias NVARCHAR(128) = N't';               -- table alias (can be empty)
+DECLARE @sql         NVARCHAR(MAX) = N'';
+
+/* --------------------------------------------------------------
+   Build the column list:
+       [alias].[col] AS [col],
+       HASHBYTES('SHA2_256', ISNULL(CAST([alias].[col] AS VARCHAR(MAX)),'')) AS [col_SHA256]
+   -------------------------------------------------------------- */
+SET @sql = N'SELECT TOP (1000) ' + 
+    STUFF((
+        SELECT N',' + CHAR(13) + CHAR(10) + N'  ' +
+               QUOTENAME(@table_alias) + N'.' + QUOTENAME(COLUMN_NAME) +
+               N' AS ' + QUOTENAME(COLUMN_NAME) + N',' + CHAR(13) + CHAR(10) + N'  ' +
+               N'HASHBYTES(''SHA2_256'', ISNULL(CAST(' +
+               QUOTENAME(@table_alias) + N'.' + QUOTENAME(COLUMN_NAME) +
+               N' AS VARCHAR(MAX)), '''')) AS ' + QUOTENAME(COLUMN_NAME + '_SHA256')
+        FROM   INFORMATION_SCHEMA.COLUMNS
+        WHERE  TABLE_SCHEMA + N'.' + TABLE_NAME = @tab
+        ORDER BY ORDINAL_POSITION
+        FOR XML PATH(''), TYPE
+    ).value(N'.', N'NVARCHAR(MAX)'), 1, 2, N'') +
+
+    NCHAR(13) + NCHAR(10) + N'FROM ' +
+    QUOTENAME(PARSENAME(@tab,2)) + N'.' + QUOTENAME(PARSENAME(@tab,1));
+
+/* --------------------------------------------------------------
+   Add table alias if supplied
+   -------------------------------------------------------------- */
+IF LEN(LTRIM(RTRIM(@table_alias))) > 0
+    SET @sql = @sql + N' AS ' + QUOTENAME(@table_alias);
+
+/* --------------------------------------------------------------
+   Return (or execute) the generated query
+   -------------------------------------------------------------- */
+SELECT @sql AS GeneratedQuery;
+
+/* ---- Uncomment to run the query directly ----
+EXEC sp_executesql @sql;
+*/
