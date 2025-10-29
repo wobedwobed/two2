@@ -1,0 +1,9 @@
+CREATE PROCEDURE dbo.GenerateSelectWithHash
+    @tab         NVARCHAR(256),      -- schema.table
+    @table_alias NVARCHAR(128) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    -- (paste the script body from above, without the DECLAREs)
+END
+GO
