@@ -1,0 +1,24 @@
+SELECT 
+    f.name AS Folder,
+    p.name AS Project,
+    ISNULL(pkg.name, '(Project Level)') AS Package,
+    par.parameter_name AS ParameterName,
+    par.parameter_data_type AS DataType,
+    par.required,
+    par.sensitive,
+    CASE WHEN par.sensitive = 0 
+         THEN CONVERT(nvarchar(max), par.design_default_value)
+         ELSE '<Sensitive>' 
+    END AS DefaultValue,
+    CASE WHEN pkg.name IS NULL THEN 'Project' ELSE 'Package' END AS Scope
+FROM catalog.projects p
+INNER JOIN catalog.folders f ON p.folder_id = f.folder_id
+LEFT JOIN catalog.packages pkg ON pkg.project_id = p.project_id
+OUTER APPLY (
+    SELECT parameter_name, parameter_data_type, required, sensitive, design_default_value
+    FROM catalog.project_parameters WHERE project_id = p.project_id
+    UNION ALL
+    SELECT parameter_name, parameter_data_type, required, sensitive, design_default_value
+    FROM catalog.package_parameters WHERE package_id = pkg.package_id
+) par
+ORDER BY Folder, Project, Package, Scope DESC, ParameterName;
