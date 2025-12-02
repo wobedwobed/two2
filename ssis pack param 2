@@ -1,0 +1,57 @@
+USE SSISDB;
+GO
+
+SELECT 
+    f.name                                                  AS FolderName,
+    prj.name                                                AS ProjectName,
+    ISNULL(pkg.name, N'(Project Level)')                    AS PackageName,
+
+    op.parameter_name                                       AS ParameterName,
+    op.data_type                                            AS DataType,
+    op.required                                             AS Required,
+    op.sensitive                                            AS Sensitive,
+
+    -- Non-sensitive values are readable directly
+    CASE 
+        WHEN op.sensitive = 0 
+            THEN CONVERT(nvarchar(max), op.design_default_value)
+        ELSE N'<Sensitive - value hidden>'
+    END                                                     AS DefaultValue,
+
+    -- Scope
+    CASE 
+        WHEN op.object_type = 20 THEN N'Project'
+        WHEN op.object_type = 30 THEN N'Package'
+    END                                                     AS ParameterScope,
+
+    -- Extra useful columns
+    op.object_type,
+    op.value_type,          -- D = design default, R = server default (environment)
+    op.value_set
+
+FROM catalog.projects prj
+INNER JOIN catalog.folders f 
+    ON prj.folder_id = f.folder_id
+
+LEFT JOIN catalog.packages pkg 
+    ON pkg.project_id = prj.project_id
+
+-- This single view contains ALL parameters (project + package)
+LEFT JOIN catalog.object_parameters op 
+    ON (op.project_id = prj.project_id 
+        AND op.object_type = 20                          -- 20 = Project parameter
+        AND op.object_name = prj.name
+        AND pkg.package_id IS NULL)
+    OR (op.project_id = prj.project_id 
+        AND op.object_type = 30                          -- 30 = Package parameter
+        AND op.object_name = pkg.name
+        AND pkg.package_id IS NOT NULL)
+
+WHERE op.parameter_name IS NOT NULL
+
+ORDER BY 
+    FolderName,
+    ProjectName,
+    PackageName,
+    ParameterScope DESC,      -- Project parameters first
+    ParameterName;
