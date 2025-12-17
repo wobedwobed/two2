@@ -1,0 +1,53 @@
+DECLARE @Json NVARCHAR(MAX) = N'
+[
+    {"Id":1,"Name":"Alice","Age":30,"City":"New York"},
+    {"Id":2,"Name":"Bob","Age":25,"City":"Los Angeles"},
+    {"Id":3,"Name":"Charlie","Age":35,"City":"Chicago"}
+]';
+
+-- Step 1: Extract all unique keys from the JSON
+WITH JsonKeys AS (
+    SELECT DISTINCT [key] AS PropertyName
+    FROM OPENJSON(@Json)
+),
+-- Step 2: Try to infer SQL data types (basic mapping)
+KeyTypes AS (
+    SELECT 
+        PropertyName,
+        -- Sample first non-null value to guess type
+        JSON_VALUE(@Json, CONCAT('$[0].', PropertyName)) AS SampleValue,
+        CASE 
+            WHEN ISNUMERIC(JSON_VALUE(@Json, CONCAT('$[0].', PropertyName))) = 1 
+                 AND JSON_VALUE(@Json, CONCAT('$[0].', PropertyName)) NOT LIKE '%.%' 
+                THEN 'INT'
+            WHEN ISNUMERIC(JSON_VALUE(@Json, CONCAT('$[0].', PropertyName))) = 1 
+                THEN 'DECIMAL(18,6)'
+            WHEN TRY_CONVERT(DATE, JSON_VALUE(@Json, CONCAT('$[0].', PropertyName))) IS NOT NULL
+                THEN 'DATE'
+            WHEN TRY_CONVERT(DATETIME, JSON_VALUE(@Json, CONCAT('$[0].', PropertyName))) IS NOT NULL
+                THEN 'DATETIME'
+            ELSE 'NVARCHAR(4000)'
+        END AS InferredType
+    FROM JsonKeys
+    WHERE JSON_VALUE(@Json, CONCAT('$[0].', PropertyName)) IS NOT NULL
+)
+-- Step 3: Build dynamic WITH clause
+SELECT 
+    STRING_AGG(
+        QUOTENAME(PropertyName) + ' ' + InferredType + ' ''$.' + PropertyName + '''',
+        ', '
+    ) WITHIN GROUP (ORDER BY PropertyName) AS WithClause
+INTO #DynamicSchema
+FROM KeyTypes;
+
+DECLARE @WithClause NVARCHAR(MAX);
+SELECT @WithClause = WithClause FROM #DynamicSchema;
+
+-- Step 4: Final dynamic OPENJSON query
+DECLARE @FinalSQL NVARCHAR(MAX) = '
+SELECT *
+FROM OPENJSON(@Json)
+WITH (' + @WithClause + ');';
+
+-- Execute it
+EXEC sp_executesql @FinalSQL, N'@Json NVARCHAR(MAX)', @Json;
