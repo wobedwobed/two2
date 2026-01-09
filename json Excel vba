@@ -1,0 +1,80 @@
+Sub TableRowsToJsonNextColumn()
+    
+    Dim ws          As Worksheet
+    Dim tbl         As ListObject
+    Dim lastCol     As Long
+    Dim jsonCol     As Long
+    Dim i           As Long
+    Dim r           As Long
+    Dim cell        As Range
+    Dim header      As Range
+    Dim jsonString  As String
+    
+    ' ── Change this to your table name ────────────────────────
+    Const TABLE_NAME As String = "T"
+    ' ───────────────────────────────────────────────────────────
+    
+    On Error GoTo ErrHandler
+    
+    Set ws = ActiveSheet
+    Set tbl = ws.ListObjects(TABLE_NAME)
+    
+    If tbl Is Nothing Then
+        MsgBox "Table named '" & TABLE_NAME & "' not found on active sheet!", vbExclamation
+        Exit Sub
+    End If
+    
+    ' Find last column of the table
+    lastCol = tbl.Range.Columns.Count
+    
+    ' Column where we will put JSON (right next to table)
+    jsonCol = tbl.Range.Column + lastCol
+    
+    ' Optional: create header for JSON column
+    With ws.Cells(tbl.Range.Row - 1, jsonCol)
+        .Value = "JSON"
+        .Font.Bold = True
+        .HorizontalAlignment = xlCenter
+    End With
+    
+    Application.ScreenUpdating = False
+    
+    ' Loop through data rows (skip header)
+    For r = 1 To tbl.DataBodyRange.Rows.Count
+        
+        jsonString = "{"
+        Set header = tbl.HeaderRowRange
+        
+        For i = 1 To lastCol
+            ' Get value from cell
+            With tbl.DataBodyRange.Cells(r, i)
+                If IsEmpty(.Value) Then
+                    jsonString = jsonString & """" & header.Cells(1, i).Value & """:null"
+                ElseIf VarType(.Value) = vbString Then
+                    ' Escape quotes and special characters
+                    jsonString = jsonString & """" & header.Cells(1, i).Value & """:""" & _
+                                 Replace(Replace(.Text, "\", "\\"), """", "\""") & """"
+                Else
+                    ' Numbers, dates, booleans etc. - no quotes
+                    jsonString = jsonString & """" & header.Cells(1, i).Value & """:" & .Text
+                End If
+            End With
+            
+            If i < lastCol Then jsonString = jsonString & ","
+        Next i
+        
+        jsonString = jsonString & "}"
+        
+        ' Write JSON to the column next to table
+        ws.Cells(tbl.DataBodyRange.Row + r - 1, jsonCol).Value = jsonString
+        
+    Next r
+    
+CleanExit:
+    Application.ScreenUpdating = True
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error " & Err.Number & vbCrLf & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
