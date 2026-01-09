@@ -1,0 +1,62 @@
+' We generate the WITH clause only once (based on headers)
+    tsqlString = "SELECT *" & vbCrLf & _
+                 "FROM OPENJSON(@json)" & vbCrLf & _
+                 "WITH (" & vbCrLf
+    
+    Set header = tbl.HeaderRowRange
+    
+    For i = 1 To lastCol
+        Dim originalName As String
+        Dim sqlColumnName As String
+        Dim jsonPath As String
+        
+        originalName = header.Cells(1, i).Value
+        
+        ' 1. For column alias in WITH clause → use [ ] when contains space
+        If InStr(originalName, " ") > 0 Or InStr(originalName, "-") > 0 Then
+            sqlColumnName = "[" & originalName & "]"
+        Else
+            sqlColumnName = originalName
+        End If
+        
+        ' 2. For JSON path → always use "..." when there is space (safer anyway)
+        If InStr(originalName, " ") > 0 Then
+            jsonPath = "'$." & """" & originalName & """" & "'"
+        Else
+            jsonPath = "'$." & originalName & "'"
+        End If
+        
+        ' Type detection (same as before)
+        cellValue = tbl.DataBodyRange.Cells(1, i).Value   ' using first row as sample
+        cellType = VarType(cellValue)
+        
+        If IsEmpty(cellValue) Or cellValue = "" Then
+            sqlType = "nvarchar(4000)"
+        ElseIf cellType = vbString Then
+            sqlType = "nvarchar(4000)"
+        ElseIf cellType >= vbInteger And cellType <= vbDouble Then
+            If InStr(1, CStr(cellValue), ".") > 0 Or cellType = vbDouble Then
+                sqlType = "decimal(18,4)"
+            Else
+                sqlType = "bigint"
+            End If
+        ElseIf cellType = vbDate Then
+            If Int(cellValue) = cellValue Then
+                sqlType = "date"
+            Else
+                sqlType = "datetime2(0)"
+            End If
+        Else
+            sqlType = "nvarchar(4000)"
+        End If
+        
+        ' Formatting line
+        tsqlString = tsqlString & "    " & _
+                     Left(sqlColumnName & Space(35), 35) & _
+                     sqlType & Space(8) & _
+                     jsonPath
+        
+        If i < lastCol Then tsqlString = tsqlString & "," & vbCrLf
+    Next i
+    
+    tsqlString = tsqlString & vbCrLf & ")"
