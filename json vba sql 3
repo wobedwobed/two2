@@ -1,0 +1,151 @@
+Sub TableRowsToJsonNextColumn_QuotedNumbersDates_WithTSQL()
+    
+    Dim ws          As Worksheet
+    Dim tbl         As ListObject
+    Dim lastCol     As Long
+    Dim jsonCol     As Long
+    Dim tsqlCol     As Long
+    Dim i           As Long
+    Dim r           As Long
+    Dim header      As Range
+    Dim jsonString  As String
+    Dim tsqlString  As String
+    Dim cellValue   As Variant
+    Dim cellType    As VbVarType
+    Dim sqlType     As String
+    Dim sqlPath     As String
+    
+    ' ── Change this to your table name ────────────────────────
+    Const TABLE_NAME As String = "T"
+    ' ───────────────────────────────────────────────────────────
+    
+    On Error GoTo ErrHandler
+    
+    Set ws = ActiveSheet
+    Set tbl = ws.ListObjects(TABLE_NAME)
+    
+    If tbl Is Nothing Then
+        MsgBox "Table named '" & TABLE_NAME & "' not found on active sheet!", vbExclamation
+        Exit Sub
+    End If
+    
+    lastCol = tbl.Range.Columns.Count
+    jsonCol = tbl.Range.Column + lastCol           ' JSON column
+    tsqlCol = jsonCol + 1                           ' T-SQL column (next one)
+    
+    ' Headers
+    With ws.Cells(tbl.Range.Row - 1, jsonCol)
+        .Value = "JSON"
+        .Font.Bold = True
+        .HorizontalAlignment = xlCenter
+    End With
+    
+    With ws.Cells(tbl.Range.Row - 1, tsqlCol)
+        .Value = "OPENJSON WITH"
+        .Font.Bold = True
+        .HorizontalAlignment = xlCenter
+    End With
+    
+    Application.ScreenUpdating = False
+    
+    ' We generate the WITH clause only once (first row) and reuse it
+    tsqlString = "SELECT *" & vbCrLf & _
+                 "FROM OPENJSON(@json)" & vbCrLf & _
+                 "WITH (" & vbCrLf
+    
+    Set header = tbl.HeaderRowRange
+    
+    For i = 1 To lastCol
+        Dim colName As String
+        colName = header.Cells(1, i).Value
+        
+        ' Clean column name for SQL (remove invalid chars, very basic version)
+        colName = Replace(Replace(Replace(colName, " ", "_"), "-", "_"), ".", "_")
+        
+        ' Very simple type detection based on first data row (you can improve this)
+        cellValue = tbl.DataBodyRange.Cells(1, i).Value
+        cellType = VarType(cellValue)
+        
+        If IsEmpty(cellValue) Or cellValue = "" Then
+            sqlType = "nvarchar(4000)"
+        ElseIf cellType = vbString Then
+            sqlType = "nvarchar(4000)"   ' you can try to detect max length later
+        ElseIf cellType >= vbInteger And cellType <= vbDouble Then
+            If InStr(1, CStr(cellValue), ".") > 0 Or cellType = vbDouble Then
+                sqlType = "decimal(18,4)"
+            Else
+                sqlType = "bigint"
+            End If
+        ElseIf cellType = vbDate Then
+            If Int(cellValue) = cellValue Then
+                sqlType = "date"
+            Else
+                sqlType = "datetime2(0)"
+            End If
+        Else
+            sqlType = "nvarchar(4000)"
+        End If
+        
+        sqlPath = "'$." & header.Cells(1, i).Value & "'"
+        
+        tsqlString = tsqlString & "    " & _
+                     Left(colName & Space(30), 30) & _
+                     sqlType & Space(6) & _
+                     sqlPath
+        
+        If i < lastCol Then tsqlString = tsqlString & "," & vbCrLf
+    Next i
+    
+    tsqlString = tsqlString & vbCrLf & ")"
+    
+    ' Write same T-SQL pattern to every row (or just first - up to you)
+    ' Here we write it to every row for easy copy-paste per record
+    For r = 1 To tbl.DataBodyRange.Rows.Count
+        
+        ' ── JSON part ────────────────────────────────────────
+        jsonString = "{"
+        
+        For i = 1 To lastCol
+            cellValue = tbl.DataBodyRange.Cells(r, i).Value
+            cellType = VarType(cellValue)
+            
+            jsonString = jsonString & """" & header.Cells(1, i).Value & """:"
+            
+            If IsEmpty(cellValue) Or cellValue = "" Then
+                jsonString = jsonString & "null"
+            ElseIf cellType = vbString Then
+                jsonString = jsonString & """" & _
+                             Replace(Replace(cellValue, "\", "\\"), """", "\""") & """"
+            ElseIf cellType >= vbInteger And cellType <= vbDouble Then
+                jsonString = jsonString & """" & CStr(cellValue) & """"
+            ElseIf cellType = vbDate Then
+                If Int(cellValue) = cellValue Then
+                    jsonString = jsonString & """" & Format(cellValue, "yyyy-mm-dd") & """"
+                Else
+                    jsonString = jsonString & """" & Format(cellValue, "yyyy-mm-dd hh:nn:ss") & """"
+                End If
+            Else
+                jsonString = jsonString & """" & Replace(CStr(cellValue), """", "\""") & """"
+            End If
+            
+            If i < lastCol Then jsonString = jsonString & ","
+        Next i
+        
+        jsonString = jsonString & "}"
+        
+        ws.Cells(tbl.DataBodyRange.Row + r - 1, jsonCol).Value = jsonString
+        
+        ' ── T-SQL part (same for every row) ──────────────────
+        ws.Cells(tbl.DataBodyRange.Row + r - 1, tsqlCol).Value = tsqlString
+        
+    Next r
+    
+CleanExit:
+    Application.ScreenUpdating = True
+    MsgBox "Done! JSON and OPENJSON WITH clauses generated.", vbInformation
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error " & Err.Number & vbCrLf & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
