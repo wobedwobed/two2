@@ -1,0 +1,99 @@
+Sub TableRowsToJsonNextColumn_QuotedNumbersAndDates()
+    
+    Dim ws          As Worksheet
+    Dim tbl         As ListObject
+    Dim lastCol     As Long
+    Dim jsonCol     As Long
+    Dim i           As Long
+    Dim r           As Long
+    Dim header      As Range
+    Dim jsonString  As String
+    Dim cellValue   As Variant
+    Dim cellType    As VbVarType
+    
+    ' ── Change this to your table name ────────────────────────
+    Const TABLE_NAME As String = "T"
+    ' ───────────────────────────────────────────────────────────
+    
+    On Error GoTo ErrHandler
+    
+    Set ws = ActiveSheet
+    Set tbl = ws.ListObjects(TABLE_NAME)
+    
+    If tbl Is Nothing Then
+        MsgBox "Table named '" & TABLE_NAME & "' not found on active sheet!", vbExclamation
+        Exit Sub
+    End If
+    
+    lastCol = tbl.Range.Columns.Count
+    jsonCol = tbl.Range.Column + lastCol   ' column right after table
+    
+    ' Optional: header for JSON column
+    With ws.Cells(tbl.Range.Row - 1, jsonCol)
+        .Value = "JSON"
+        .Font.Bold = True
+        .HorizontalAlignment = xlCenter
+    End With
+    
+    Application.ScreenUpdating = False
+    
+    ' Loop through data rows
+    For r = 1 To tbl.DataBodyRange.Rows.Count
+        
+        jsonString = "{"
+        Set header = tbl.HeaderRowRange
+        
+        For i = 1 To lastCol
+            
+            cellValue = tbl.DataBodyRange.Cells(r, i).Value
+            cellType = VarType(cellValue)
+            
+            ' Field name
+            jsonString = jsonString & """" & header.Cells(1, i).Value & """:"
+            
+            If IsEmpty(cellValue) Or cellValue = "" Then
+                jsonString = jsonString & "null"
+                
+            ElseIf cellType = vbString Then
+                ' Escape quotes and backslashes
+                jsonString = jsonString & """" & _
+                             Replace(Replace(cellValue, "\", "\\"), """", "\""") & """"
+                             
+            ElseIf cellType >= vbInteger And cellType <= vbDouble Then    ' all numeric types
+                ' Numbers → quoted as string
+                jsonString = jsonString & """" & CStr(cellValue) & """"
+                
+            ElseIf cellType = vbDate Then
+                ' Date → quoted in ISO-like format
+                If Int(cellValue) = cellValue Then
+                    ' Date only (no time)
+                    jsonString = jsonString & """" & Format(cellValue, "yyyy-mm-dd") & """"
+                Else
+                    ' Date + Time
+                    jsonString = jsonString & """" & Format(cellValue, "yyyy-mm-dd hh:nn:ss") & """"
+                End If
+                
+            Else
+                ' Fallback - try to convert to string and quote
+                jsonString = jsonString & """" & Replace(CStr(cellValue), """", "\""") & """"
+            End If
+            
+            If i < lastCol Then jsonString = jsonString & ","
+            
+        Next i
+        
+        jsonString = jsonString & "}"
+        
+        ' Write result
+        ws.Cells(tbl.DataBodyRange.Row + r - 1, jsonCol).Value = jsonString
+        
+    Next r
+    
+CleanExit:
+    Application.ScreenUpdating = True
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error " & Err.Number & vbCrLf & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
