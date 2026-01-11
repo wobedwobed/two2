@@ -1,0 +1,77 @@
+DECLARE @json NVARCHAR(MAX) =
+'
+[{"title":"Lalka","author":"Bolesław Prus","publicationDate":"1890-01-15","genre":"realizm","literaryPeriod":"pozytywizm","mainCharacter":"Stanisław Wokulski","setting":"Warszawa, 1878–1879","pricePLN":49.90},{"title":"Pan Tadeusz","author":"Adam Mickiewicz","publicationDate":"1834-06-28","genre":"poemat epicki","literaryPeriod":"romantyzm","mainCharacter":"Jacek Soplica","setting":"Litwa, 1811–1812","pricePLN":39.90},{"title":"Dziady cz. III","author":"Adam Mickiewicz","publicationDate":"1832-12-01","genre":"dramat romantyczny","literaryPeriod":"romantyzm","mainCharacter":"Konrad","setting":"Wilno, Warszawa, 1823–1824","pricePLN":34.50},{"title":"Quo Vadis","author":"Henryk Sienkiewicz","publicationDate":"1896-03-01","genre":"powieść historyczna","literaryPeriod":"pozytywizm","mainCharacter":"Winicjusz","setting":"Rzym, 64 n.e.","pricePLN":54.90},{"title":"Ferdydurke","author":"Witold Gombrowicz","publicationDate":"1937-10-01","genre":"powieść groteskowa","literaryPeriod":"dwudziestolecie międzywojenne","mainCharacter":"Józio Kowalski","setting":"Warszawa, lata 30. XX w.","pricePLN":44.90},{"title":"Chłopi","author":"Władysław Reymont","publicationDate":"1904-01-01","genre":"powieść chłopska","literaryPeriod":"Młoda Polska / naturalizm","mainCharacter":"Boryna","setting":"Lipce, wieś polska, przełom XIX/XX w.","pricePLN":59.90},{"title":"Wesele","author":"Stanisław Wyspiański","publicationDate":"1901-11-16","genre":"dramat symboliczny","literaryPeriod":"Młoda Polska","mainCharacter":"Pan Młody","setting":"Wesele w Bronowicach, 1900","pricePLN":32.00},{"title":"Przedwiośnie","author":"Stefan Żeromski","publicationDate":"1924-10-01","genre":"powieść tendencyjna","literaryPeriod":"dwudziestolecie międzywojenne","mainCharacter":"Cezary Baryka","setting":"Baku, Warszawa, Nawłoć, 1914–1920","pricePLN":42.90},{"title":"Zniewolony umysł","author":"Czesław Miłosz","publicationDate":"1953-05-01","genre":"esej","literaryPeriod":"literatura emigracyjna","mainCharacter":"-","setting":"-","pricePLN":48.50},{"title":"Solaris","author":"Stanisław Lem","publicationDate":"1961-01-01","genre":"science fiction","literaryPeriod":"XX wiek","mainCharacter":"Kris Kelvin","setting":"Stacja kosmiczna nad planetą Solaris","pricePLN":51.90}]
+'
+
+
+DROP TABLE IF EXISTS #tmp
+SELECT 
+    j.[key] AS json_id
+    --,j.[value]
+    ,jj.[KEY], jj.[VALUE]
+    --,*
+INTO #tmp
+FROM OPENJSON(@json) j
+OUTER APPLY (
+    SELECT *
+    FROM OPENJSON(j.value)
+    ) jj
+
+SELECT *
+FROM #tmp
+ORDER BY 1, 2
+
+/*
+;WITH CTE AS (
+SELECT j.[key], j.[value]
+FROM OPENJSON(@json) j
+)
+SELECT j.[key], j.[value], *
+FROM CTE j
+OUTER APPLY (
+    SELECT *
+    FROM OPENJSON(j.value)
+    ) jj
+*/
+
+DECLARE @list NVARCHAR(MAX) = (
+SELECT 
+    STUFF(
+        (SELECT DISTINCT ', [' + [key] + ']'
+         FROM #tmp
+         FOR XML PATH(''), TYPE
+        ).value('.', 'nvarchar(max)'), 
+        1, 2, ''
+    ) AS wynik
+)
+SELECT @list
+
+SELECT *
+FROM #tmp
+PIVOT (MAX([value]) FOR [key] IN ([author], [genre], [literaryPeriod], [mainCharacter], [pricePLN], [publicationDate], [setting], [title])) AS pt
+ORDER BY 1, 2
+
+DECLARE @SQL NVARCHAR(MAX) =
+'
+DROP TABLE IF EXISTS ##tmp_out
+SELECT *
+INTO ##tmp_out
+FROM #tmp
+PIVOT (MAX([value]) FOR [key] IN ($$$$)) AS pt
+ORDER BY 1, 2
+'
+SELECT @SQL
+
+DECLARE @SQL_1 NVARCHAR(MAX) = REPLACE(@SQL,'$$$$',@list)
+SELECT @SQL_1
+
+
+
+
+ SELECT * FROM #tmp PIVOT (MAX([value]) FOR [key] IN ([author], [genre], [literaryPeriod], [mainCharacter], [pricePLN], [publicationDate], [setting], [title])) AS pt ORDER BY 1, 2 
+
+ EXEC sp_executesql @SQL_1
+ SELECT '=============================='
+ SELECT * FROM ##tmp_out
+
+
