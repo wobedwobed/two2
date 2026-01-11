@@ -1,0 +1,167 @@
+Sub TableToJsonAndOpenJsonWithClause_PlusArrayAtBottom()
+    
+    Dim ws          As Worksheet
+    Dim tbl         As ListObject
+    Dim lastCol     As Long
+    Dim jsonCol     As Long
+    Dim tsqlCol     As Long
+    Dim i           As Long
+    Dim r           As Long
+    Dim header      As Range
+    Dim jsonString  As String
+    Dim tsqlString  As String
+    Dim cellValue   As Variant
+    Dim cellType    As VbVarType
+    Dim sqlType     As String
+    Dim allJsonRows As Collection          ' ← to collect all row JSONs
+    
+    Const TABLE_NAME As String = "T"       ' ← your table name
+    
+    On Error GoTo ErrHandler
+    
+    Set ws = ActiveSheet
+    Set tbl = ws.ListObjects(TABLE_NAME)
+    
+    If tbl Is Nothing Then
+        MsgBox "Table '" & TABLE_NAME & "' not found!", vbExclamation
+        Exit Sub
+    End If
+    
+    Set allJsonRows = New Collection
+    
+    lastCol = tbl.Range.Columns.Count
+    jsonCol = tbl.Range.Column + lastCol
+    tsqlCol = jsonCol + 1
+    
+    ' Headers
+    With ws.Cells(tbl.Range.Row - 1, jsonCol)
+        .Value = "JSON"
+        .Font.Bold = True
+        .HorizontalAlignment = xlCenter
+    End With
+    
+    With ws.Cells(tbl.Range.Row - 1, tsqlCol)
+        .Value = "OPENJSON WITH"
+        .Font.Bold = True
+        .HorizontalAlignment = xlCenter
+    End With
+    
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    ' ────────────────────────────────
+    '   Generate OPENJSON WITH clause
+    ' ────────────────────────────────
+    tsqlString = "SELECT *" & vbCrLf & _
+                 "FROM OPENJSON(@json)" & vbCrLf & _
+                 "WITH (" & vbCrLf
+    
+    Set header = tbl.HeaderRowRange
+    
+    For i = 1 To lastCol
+        Dim colName As String: colName = header.Cells(1, i).Value
+        Dim sqlColName As String
+        Dim jsonPath As String
+        
+        sqlColName = IIf(InStr(colName, " ") > 0 Or InStr(colName, "-") > 0 Or InStr(colName, ".") > 0, _
+                         "[" & colName & "]", colName)
+                         
+        jsonPath = IIf(InStr(colName, " ") > 0, "'\( ." & """" & colName & """" & "'", "' \)." & colName & "'")
+        
+        ' Simple type guess from first row
+        cellValue = tbl.DataBodyRange.Cells(1, i).Value
+        cellType = VarType(cellValue)
+        
+        Select Case True
+            Case IsEmpty(cellValue) Or cellValue = "": sqlType = "nvarchar(4000)"
+            Case cellType = vbString:                  sqlType = "nvarchar(4000)"
+            Case cellType >= vbInteger And cellType <= vbDouble
+                sqlType = IIf(InStr(CStr(cellValue), ".") > 0 Or cellType = vbDouble, "decimal(18,4)", "bigint")
+            Case cellType = vbDate
+                sqlType = IIf(Int(cellValue) = cellValue, "date", "datetime2(0)")
+            Case Else:                                 sqlType = "nvarchar(4000)"
+        End Select
+        
+        tsqlString = tsqlString & "    " & _
+                     Left(sqlColName & Space(40), 40) & _
+                     sqlType & Space(6) & jsonPath
+        
+        If i < lastCol Then tsqlString = tsqlString & "," & vbCrLf
+    Next i
+    
+    tsqlString = tsqlString & vbCrLf & ")"
+    
+    ' ────────────────────────────────
+    '        Process each data row
+    ' ────────────────────────────────
+    For r = 1 To tbl.DataBodyRange.Rows.Count
+        jsonString = "{"
+        
+        For i = 1 To lastCol
+            cellValue = tbl.DataBodyRange.Cells(r, i).Value
+            cellType = VarType(cellValue)
+            
+            jsonString = jsonString & """" & header.Cells(1, i).Value & """:"
+            
+            If IsEmpty(cellValue) Or cellValue = "" Then
+                jsonString = jsonString & "null"
+            ElseIf cellType = vbString Then
+                jsonString = jsonString & """" & _
+                             Replace(Replace(Replace(cellValue, "\", "\\"), """", "\"""), vbLf, "\n") & """"
+            ElseIf cellType >= vbInteger And cellType <= vbDouble Then
+                Dim numStr As String: numStr = CStr(cellValue)
+                numStr = Replace(numStr, ",", ".")                  ' ← comma → dot
+                jsonString = jsonString & """" & numStr & """"
+            ElseIf cellType = vbDate Then
+                jsonString = jsonString & """" & _
+                             Format(cellValue, IIf(Int(cellValue) = cellValue, "yyyy-mm-dd", "yyyy-mm-dd hh:nn:ss")) & """"
+            Else
+                jsonString = jsonString & """" & Replace(Replace(CStr(cellValue), "\", "\\"), """", "\""") & """"
+            End If
+            
+            If i < lastCol Then jsonString = jsonString & ","
+        Next i
+        
+        jsonString = jsonString & "}"
+        
+        ' Save to sheet + collect for final array
+        ws.Cells(tbl.DataBodyRange.Row + r - 1, jsonCol).Value = jsonString
+        ws.Cells(tbl.DataBodyRange.Row + r - 1, tsqlCol).Value = tsqlString
+        
+        allJsonRows.Add jsonString
+    Next r
+    
+    ' ────────────────────────────────
+    '   Final row → JSON Array of all rows
+    ' ────────────────────────────────
+    Dim arrayJson As String
+    arrayJson = "["
+    
+    For i = 1 To allJsonRows.Count
+        arrayJson = arrayJson & allJsonRows(i)
+        If i < allJsonRows.Count Then arrayJson = arrayJson & ","
+    Next i
+    
+    arrayJson = arrayJson & "]"
+    
+    ' Write array one row below the last data row
+    Dim arrayRow As Long
+    arrayRow = tbl.DataBodyRange.Row + tbl.DataBodyRange.Rows.Count
+    
+    ws.Cells(arrayRow, jsonCol).Value = arrayJson
+    ws.Cells(arrayRow, jsonCol).Font.Bold = True
+    ws.Cells(arrayRow - 1, jsonCol).Offset(1, 0).Interior.Color = RGB(240, 240, 255)  ' light blue-ish
+    
+    ' Optional label
+    ws.Cells(arrayRow, jsonCol).Offset(-1, -1).Value = "All rows as JSON array ↓"
+    
+CleanExit:
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+    MsgBox "Done! JSON per row + full array at the bottom.", vbInformation
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error " & Err.Number & vbCrLf & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
