@@ -1,0 +1,133 @@
+Sub ExportTableRowsAsJsonArrayToFile()
+    
+    Dim ws          As Worksheet
+    Dim tbl         As ListObject
+    Dim lastCol     As Long
+    Dim i           As Long
+    Dim r           As Long
+    Dim header      As Range
+    Dim jsonString  As String
+    Dim cellValue   As Variant
+    Dim cellType    As VbVarType
+    Dim allJsonRows As Collection
+    Dim arrayJson   As String
+    Dim filePath    As String
+    Dim fileNum     As Integer
+    
+    ' =============================================================
+    '                     SETTINGS
+    ' =============================================================
+    Const TABLE_NAME   As String = "T"                  ' ← your table name
+    Const OUTPUT_FILE  As String = "table_data_array.json"
+    
+    On Error GoTo ErrHandler
+    
+    Set ws = ActiveSheet
+    Set tbl = ws.ListObjects(TABLE_NAME)
+    
+    If tbl Is Nothing Then
+        MsgBox "Table named '" & TABLE_NAME & "' not found on active sheet!", vbExclamation
+        Exit Sub
+    End If
+    
+    If tbl.DataBodyRange Is Nothing Then
+        MsgBox "Table has no data rows.", vbExclamation
+        Exit Sub
+    End If
+    
+    Set allJsonRows = New Collection
+    
+    lastCol = tbl.Range.Columns.Count
+    Set header = tbl.HeaderRowRange
+    
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    
+    ' ────────────────────────────────
+    '        Build JSON for each row
+    ' ────────────────────────────────
+    For r = 1 To tbl.DataBodyRange.Rows.Count
+        
+        jsonString = "{"
+        
+        For i = 1 To lastCol
+            cellValue = tbl.DataBodyRange.Cells(r, i).Value
+            cellType = VarType(cellValue)
+            
+            jsonString = jsonString & """" & header.Cells(1, i).Value & """:"
+            
+            If IsEmpty(cellValue) Or cellValue = "" Then
+                jsonString = jsonString & "null"
+                
+            ElseIf cellType = vbString Then
+                jsonString = jsonString & """" & _
+                             Replace(Replace(Replace(cellValue, "\", "\\"), """", "\"""), vbLf, "\n") & """"
+                             
+            ElseIf cellType >= vbInteger And cellType <= vbDouble Then
+                Dim numStr As String
+                numStr = CStr(cellValue)
+                numStr = Replace(numStr, ",", ".")           ' comma → dot
+                jsonString = jsonString & """" & numStr & """"
+                
+            ElseIf cellType = vbDate Then
+                If Int(cellValue) = cellValue Then
+                    jsonString = jsonString & """" & Format(cellValue, "yyyy-mm-dd") & """"
+                Else
+                    jsonString = jsonString & """" & Format(cellValue, "yyyy-mm-dd hh:nn:ss") & """"
+                End If
+                
+            Else
+                jsonString = jsonString & """" & _
+                             Replace(Replace(CStr(cellValue), "\", "\\"), """", "\""") & """"
+            End If
+            
+            If i < lastCol Then jsonString = jsonString & ","
+        Next i
+        
+        jsonString = jsonString & "}"
+        
+        allJsonRows.Add jsonString
+        
+    Next r
+    
+    ' ────────────────────────────────
+    '       Create JSON array
+    ' ────────────────────────────────
+    arrayJson = "["
+    
+    For i = 1 To allJsonRows.Count
+        arrayJson = arrayJson & allJsonRows(i)
+        If i < allJsonRows.Count Then arrayJson = arrayJson & ","
+    Next i
+    
+    arrayJson = arrayJson & "]"
+    
+    ' ────────────────────────────────
+    '         Save to file
+    ' ────────────────────────────────
+    If Len(ThisWorkbook.Path) = 0 Then
+        MsgBox "Workbook is not saved yet. Cannot determine folder to save the file.", vbExclamation
+        GoTo CleanExit
+    End If
+    
+    filePath = ThisWorkbook.Path & Application.PathSeparator & OUTPUT_FILE
+    
+    fileNum = FreeFile
+    Open filePath For Output As #fileNum
+    Print #fileNum, arrayJson
+    Close #fileNum
+    
+CleanExit:
+    Application.Calculation = xlCalculationAutomatic
+    Application.ScreenUpdating = True
+    
+    If Len(filePath) > 0 Then
+        MsgBox "JSON array saved to:" & vbCrLf & vbCrLf & filePath, vbInformation
+    End If
+    
+    Exit Sub
+
+ErrHandler:
+    MsgBox "Error " & Err.Number & vbCrLf & Err.Description, vbCritical
+    Resume CleanExit
+End Sub
