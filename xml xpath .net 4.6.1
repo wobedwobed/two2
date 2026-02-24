@@ -1,0 +1,286 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Xml;
+using System.Data.SqlClient;
+
+namespace DtsxXPathGenerator
+{
+    class Program
+    {
+        // ────────────────────────────────────────────────
+        // CONFIGURATION – change these values
+        // ────────────────────────────────────────────────
+        static string rootDirectory    = @"C:\SSIS\Projects";
+        static string searchString     = "Sapiens";               // ← what you're looking for
+        static string connectionString = "Server=localhost;Database=YourDb;Trusted_Connection=True;";
+        // ────────────────────────────────────────────────
+
+        static List<string> xpathExpressions = new List<string>();
+
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Stage 1 – Searching for .dtsx files containing '" + searchString + "' ...");
+
+            // ──────────────────────────────
+            // STAGE 1 – find matching files
+            // ──────────────────────────────
+            List<string> matchingFiles = FindDtsxFilesContainingString(
+                rootDirectory,
+                searchString,
+                false   // case insensitive
+            );
+
+            if (matchingFiles.Count == 0)
+            {
+                Console.WriteLine("No .dtsx files containing '" + searchString + "' were found.");
+                return;
+            }
+
+            Console.WriteLine("Found " + matchingFiles.Count + " matching file(s):");
+            foreach (string path in matchingFiles)
+            {
+                Console.WriteLine("  " + path);
+            }
+
+            Console.WriteLine("\nStage 2 – Processing matching files...\n");
+
+            // ──────────────────────────────
+            // STAGE 2 – process only matching files
+            // ──────────────────────────────
+            foreach (string filePath in matchingFiles)
+            {
+                ProcessSingleDtsxFile(filePath);
+            }
+
+            Console.WriteLine("\nProcessing finished.");
+            Console.ReadLine(); // optional – keep console open
+        }
+
+        static List<string> FindDtsxFilesContainingString(
+            string directory,
+            string searchText,
+            bool caseSensitive)
+        {
+            List<string> matchingFiles = new List<string>();
+
+            try
+            {
+                string[] files = Directory.GetFiles(directory, "*.dtsx", SearchOption.AllDirectories);
+
+                StringComparison comparison = caseSensitive 
+                    ? StringComparison.Ordinal 
+                    : StringComparison.OrdinalIgnoreCase;
+
+                foreach (string file in files)
+                {
+                    try
+                    {
+                        string content = File.ReadAllText(file);
+
+                        // .NET 4.6.1 safe way to check contains (case insensitive option)
+                        if (content.IndexOf(searchText, comparison) >= 0)
+                        {
+                            matchingFiles.Add(file);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Cannot read " + file + " → " + ex.Message);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error scanning directory " + directory + ": " + ex.Message);
+            }
+
+            return matchingFiles;
+        }
+
+        static void ProcessSingleDtsxFile(string filePath)
+        {
+            try
+            {
+                string xmlContent = File.ReadAllText(filePath);
+                XmlDocument doc = new XmlDocument();
+                doc.LoadXml(xmlContent);
+
+                string fileName = Path.GetFileName(filePath);
+
+                xpathExpressions.Clear();
+
+                GenerateXPath(doc.DocumentElement, "", fileName);
+
+                string foundText = FindSapiens(doc);
+
+                InsertDtsxContent(fileName, xmlContent, foundText);
+
+                Console.WriteLine("Processed: " + fileName + " (found text: " + 
+                    (foundText != null ? foundText : "none") + ")");
+            }
+            catch (XmlException ex)
+            {
+                Console.WriteLine("Invalid XML in " + Path.GetFileName(filePath) + ": " + ex.Message);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error processing " + Path.GetFileName(filePath) + ": " + ex.Message);
+            }
+        }
+
+        static void GenerateXPath(XmlNode node, string currentPath, string fileName)
+        {
+            if (node == null) return;
+
+            if (node.NodeType == XmlNodeType.Element)
+            {
+                string tagName = node.Name;
+                string newPath = currentPath + "/" + tagName;
+
+                int index = CalculateSiblingIndex(node);
+                if (index > 0)
+                {
+                    newPath += "[" + index.ToString("D3") + "]";
+                }
+
+                // Check for DTS:refId attribute
+                string refIdSuffix = "";
+                XmlAttribute refIdAttr = null;
+                if (node.Attributes != null)
+                {
+                    refIdAttr = node.Attributes["DTS:refId"];
+                }
+                if (refIdAttr != null && !string.IsNullOrWhiteSpace(refIdAttr.Value))
+                {
+                    refIdSuffix = " (refId=" + refIdAttr.Value.Trim() + ")";
+                }
+
+                string finalPath = newPath + refIdSuffix;
+                xpathExpressions.Add(finalPath);
+                InsertXPathToSql(fileName, finalPath);
+
+                // Attributes
+                if (node.Attributes != null)
+                {
+                    foreach (XmlAttribute attr in node.Attributes)
+                    {
+                        string attrPath = newPath + "/@" + attr.Name + "=\"" + attr.Value + "\"";
+                        xpathExpressions.Add(attrPath);
+                        InsertXPathToSql(fileName, attrPath);
+                    }
+                }
+
+                foreach (XmlNode child in node.ChildNodes)
+                {
+                    GenerateXPath(child, newPath, fileName);
+                }
+            }
+            else if (node.NodeType == XmlNodeType.Text)
+            {
+                if (!string.IsNullOrWhiteSpace(node.Value))
+                {
+                    string textPath = currentPath + "/text()=\"" + node.Value.Trim() + "\"";
+                    xpathExpressions.Add(textPath);
+                    InsertXPathToSql(fileName, textPath);
+                }
+            }
+        }
+
+        static int CalculateSiblingIndex(XmlNode node)
+        {
+            if (node.ParentNode == null) return 0;
+
+            int sameTagCount = 0;
+            foreach (XmlNode n in node.ParentNode.ChildNodes)
+            {
+                if (n.NodeType == XmlNodeType.Element && n.Name == node.Name)
+                    sameTagCount++;
+            }
+
+            if (sameTagCount <= 1) return 0;
+
+            int preceding = 0;
+            foreach (XmlNode sibling in node.ParentNode.ChildNodes)
+            {
+                if (sibling == node) return preceding + 1;
+                if (sibling.NodeType == XmlNodeType.Element && sibling.Name == node.Name)
+                    preceding++;
+            }
+
+            return preceding + 1;
+        }
+
+        static string FindSapiens(XmlDocument doc)
+        {
+            try
+            {
+                XmlNode node = doc.SelectSingleNode("//*[text()='Sapiens']");
+                if (node != null)
+                {
+                    return node.InnerText;
+                }
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        static void InsertXPathToSql(string fileName, string xpath)
+        {
+            SqlConnection conn = null;
+            SqlCommand cmd = null;
+            try
+            {
+                conn = new SqlConnection(connectionString);
+                conn.Open();
+
+                cmd = new SqlCommand(
+                    "INSERT INTO XPathExpressions (FileName, XPathExpression) VALUES (@fn, @xp)", 
+                    conn);
+                cmd.Parameters.AddWithValue("@fn", fileName);
+                cmd.Parameters.AddWithValue("@xp", xpath);
+                cmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("DB insert error (" + fileName + "): " + ex.Message);
+            }
+            finally
+            {
+                if (cmd != null) cmd.Dispose();
+                if (conn != null) { conn.Close(); conn.Dispose(); }
+            }
+        }
+
+        static void InsertDtsxContent(string fileName, string xmlContent, string foundText)
+        {
+            SqlConnection conn = null;
+            SqlCommand cmd = null;
+            try
+            {
+                conn = new SqlConnection(connectionString);
+                conn.Open();
+
+                cmd = new SqlCommand(
+                    "INSERT INTO DtsxFiles (FileName, XmlContent, SapiensText) VALUES (@fn, @xml, @txt)", 
+                    conn);
+                cmd.Parameters.AddWithValue("@fn", fileName);
+                cmd.Parameters.AddWithValue("@xml", xmlContent);
+                cmd.Parameters.AddWithValue("@txt", foundText ?? (object)DBNull.Value);
+                cmd.ExecuteNonQuery();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("DB content insert error (" + fileName + "): " + ex.Message);
+            }
+            finally
+            {
+                if (cmd != null) cmd.Dispose();
+                if (conn != null) { conn.Close(); conn.Dispose(); }
+            }
+        }
+    }
+}
