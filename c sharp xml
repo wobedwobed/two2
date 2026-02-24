@@ -1,0 +1,68 @@
+static void GenerateXPath(XmlNode node, string currentPath, string fileName)
+{
+    if (node == null)
+        return;
+
+    switch (node.NodeType)
+    {
+        case XmlNodeType.Element:
+            string tagName = node.Name;
+            string newPath = currentPath + "/" + tagName;
+
+            // Calculate normal position index (001, 002, ...)
+            int index = CalculateSiblingIndex(node);
+            if (index > 0)
+            {
+                newPath += $"[{index.ToString("D3")}]";
+            }
+
+            // ────────────────────────────────────────────────
+            // NEW: Check for DTS:refId attribute
+            string refIdSuffix = "";
+            XmlAttribute refIdAttr = node.Attributes["DTS:refId"];
+            if (refIdAttr != null && !string.IsNullOrWhiteSpace(refIdAttr.Value))
+            {
+                string refIdValue = refIdAttr.Value.Trim();
+                refIdSuffix = $" (refId={refIdValue})";
+            }
+            // ────────────────────────────────────────────────
+
+            // Final path for this element (with optional refId)
+            string finalElementPath = newPath + refIdSuffix;
+
+            xpathExpressions.Add(finalElementPath);
+            InsertXPathToSql(fileName, finalElementPath);
+
+            // Process attributes – we still want to list them separately
+            if (node.Attributes != null)
+            {
+                foreach (XmlAttribute attr in node.Attributes)
+                {
+                    // We can skip adding DTS:refId again as a separate attribute line
+                    // if you prefer – or keep it, your choice
+                    string attrPath = $"{newPath}/@{attr.Name}=\"{attr.Value}\"";
+                    xpathExpressions.Add(attrPath);
+                    InsertXPathToSql(fileName, attrPath);
+                }
+            }
+
+            // Recurse children
+            foreach (XmlNode child in node.ChildNodes)
+            {
+                GenerateXPath(child, newPath, fileName);
+            }
+            break;
+
+        case XmlNodeType.Text:
+            if (!string.IsNullOrWhiteSpace(node.Value))
+            {
+                string textPath = $"{currentPath}/text()=\"{node.Value.Trim()}\"";
+                xpathExpressions.Add(textPath);
+                InsertXPathToSql(fileName, textPath);
+            }
+            break;
+
+        default:
+            break;
+    }
+}
