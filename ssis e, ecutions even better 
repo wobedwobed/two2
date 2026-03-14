@@ -1,0 +1,15 @@
+SELECT 
+    parent.execution_id AS Parent_Execution_ID,
+    parent.package_name AS Parent_Package,
+    child.execution_id AS Child_Execution_ID,
+    child.package_name AS Child_Package,
+    child.start_time AS Child_Start_Time,
+    child.status AS Child_Status
+FROM [catalog].[executions] child
+JOIN [catalog].[event_messages] msg 
+    ON msg.operation_id = child.execution_id
+JOIN [catalog].[executions] parent 
+    ON msg.message LIKE '%' + CAST(child.execution_id AS NVARCHAR(20)) + '%'
+    AND msg.operation_id <> parent.execution_id -- wykluczamy auto-referencję
+WHERE msg.event_name = 'OnPreExecute' 
+  AND msg.message LIKE '%child package%' -- SSIS loguje tu ID wywołanego pakietu
