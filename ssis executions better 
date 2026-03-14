@@ -1,0 +1,16 @@
+SELECT 
+    child_exec.execution_id AS Child_Execution_ID,
+    child_exec.package_name AS Child_Package,
+    parent_exec.execution_id AS Parent_Execution_ID,
+    parent_exec.package_name AS Parent_Package,
+    child_exec.start_time,
+    child_exec.status
+FROM [catalog].[executions] AS child_exec
+-- Łączymy się z tabelą statystyk, która wie o hierarchii
+JOIN [catalog].[executable_statistics] AS stats 
+    ON child_exec.execution_id = stats.execution_id
+-- Łączymy się z powrotem z executions, by wyciągnąć dane rodzica
+JOIN [catalog].[executions] AS parent_exec 
+    ON stats.execution_id = parent_exec.execution_id 
+WHERE parent_exec.package_name <> child_exec.package_name
+ORDER BY child_exec.start_time DESC;
