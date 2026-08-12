@@ -1,0 +1,95 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+namespace FileStringReplacer
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            // Sprawdzenie, czy podano argument (ścieżkę do pliku)
+            if (args.Length != 1)
+            {
+                Console.WriteLine("Użycie: FileStringReplacer.exe <sciezka_do_pliku>");
+                return;
+            }
+
+            string filePath = args[0];
+
+            // Sprawdzenie, czy wskazany plik istnieje
+            if (!File.Exists(filePath))
+            {
+                Console.WriteLine($"Błąd: Plik '{filePath}' nie istnieje.");
+                return;
+            }
+
+            try
+            {
+                // KROK 1: Tworzenie kopii zapasowej
+                string directory = Path.GetDirectoryName(filePath);
+                string fileNameWithoutExt = Path.GetFileNameWithoutExtension(filePath);
+                string extension = Path.GetExtension(filePath);
+
+                // Budowanie nazwy pliku backupu (dodanie sufixu "_backup_wo")
+                string backupFileName = $"{fileNameWithoutExt}_backup_wo{extension}";
+                string backupFilePath = Path.Combine(directory, backupFileName);
+
+                File.Copy(filePath, backupFilePath, overwrite: true);
+                Console.WriteLine($"[INFO] Utworzono kopię zapasową: {backupFileName}");
+
+                // Definiowanie ciągów znaków do znalezienia i zamiany (Słownik: szukane -> zamiennik)
+                var replacements = new Dictionary<string, string>
+                {
+                    { "task_AuditKey", "pkg_AuditKey" },
+                    { "task_Name", "task Name" }
+                    // Tutaj możesz dodawać kolejne pary ciągów znaków
+                };
+
+                // Definiowanie listy prefiksów
+                // Zwróć uwagę na znak ucieczki dla cudzysłowu ( \")
+                string[] prefixes = new string[]
+                {
+                    "@[User::",
+                    "DTS: ObjectName=\""
+                    // Tutaj możesz dodawać kolejne prefiksy
+                };
+
+                // KROK 2: Odczytanie zawartości pliku
+                string fileContent = File.ReadAllText(filePath);
+                int replacementCount = 0;
+
+                // KROK 3: Logika zamiany ciągów znaków
+                foreach (var replacement in replacements)
+                {
+                    foreach (var prefix in prefixes)
+                    {
+                        // Złożenie ostatecznego stringa do wyszukania i do wstawienia
+                        string searchString = prefix + replacement.Key;
+                        string replaceString = prefix + replacement.Value;
+
+                        // Wykonanie zamiany tylko w przypadku, jeśli dany string istnieje w tekście
+                        if (fileContent.Contains(searchString))
+                        {
+                            fileContent = fileContent.Replace(searchString, replaceString);
+                            Console.WriteLine($"[INFO] Zamieniono: '{searchString}' -> '{replaceString}'");
+                            replacementCount++;
+                        }
+                    }
+                }
+
+                // KROK 4: Zapisanie pliku pod tą samą nazwą
+                File.WriteAllText(filePath, fileContent);
+                Console.WriteLine($"[SUKCES] Zakończono modyfikację. Plik zapisany pomyślnie (dokonano zmian: {replacementCount}).");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Console.WriteLine("Błąd: Brak uprawnień do odczytu/zapisu pliku. Sprawdź, czy plik nie jest zablokowany.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Wystąpił nieoczekiwany błąd: {ex.Message}");
+            }
+        }
+    }
+}
