@@ -1,0 +1,123 @@
+using System;
+using System.IO;
+
+namespace TextSearchApp
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            // 1. Definicja parametrów początkowych
+            string filePath = @"C:\test\plik.txt"; // Zmień na właściwą ścieżkę
+            string varString = "varString";
+            string exeString = "exeString";
+            string nameString = "nameString";
+            string exeCloseString = "exeCloseString";
+
+            // Zmienne wynikowe
+            int varStringPosition = -1;
+            int exeStringPositionStart = -1;
+            int nameStringPositionStart = -1;
+            string exeName = string.Empty;
+            int exeStringPositionEnd = -1;
+            int exeCloseStringEnd = -1;
+            string exeNode = string.Empty;
+
+            try
+            {
+                // Sprawdzenie, czy plik istnieje
+                if (!File.Exists(filePath))
+                {
+                    Console.WriteLine($"Błąd: Plik {filePath} nie istnieje.");
+                    Console.ReadLine();
+                    return;
+                }
+
+                // 2. Otwarcie i wczytanie zawartości pliku tekstowego
+                string fileContent = File.ReadAllText(filePath);
+
+                // 3. Wyszukanie pozycji varString
+                varStringPosition = fileContent.IndexOf(varString);
+
+                if (varStringPosition != -1)
+                {
+                    // 4. Wyszukiwanie wstecz wystąpienia exeString
+                    exeStringPositionStart = fileContent.LastIndexOf(exeString, varStringPosition);
+
+                    if (exeStringPositionStart != -1)
+                    {
+                        // 5. Szukanie naprzód nameString od pozycji exeStringPositionStart
+                        nameStringPositionStart = fileContent.IndexOf(nameString, exeStringPositionStart);
+
+                        if (nameStringPositionStart != -1)
+                        {
+                            // Pobranie całej linijki, w której znajduje się nameString
+                            int lineStart = fileContent.LastIndexOf('\n', nameStringPositionStart);
+                            lineStart = (lineStart == -1) ? 0 : lineStart + 1; // Jeśli to pierwsza linijka, zacznij od indeksu 0
+
+                            int lineEndCR = fileContent.IndexOf('\r', nameStringPositionStart);
+                            int lineEndLF = fileContent.IndexOf('\n', nameStringPositionStart);
+                            
+                            int lineEnd = lineEndCR;
+                            if (lineEndCR == -1 || (lineEndLF != -1 && lineEndLF < lineEndCR))
+                            {
+                                lineEnd = lineEndLF;
+                            }
+                            if (lineEnd == -1)
+                            {
+                                lineEnd = fileContent.Length; // Jeśli to ostatnia linijka (brak znaków nowej linii)
+                            }
+
+                            exeName = fileContent.Substring(lineStart, lineEnd - lineStart).Trim();
+                        }
+
+                        // 6. Wyszukiwanie naprzód exeCloseString od pozycji varString
+                        exeStringPositionEnd = fileContent.IndexOf(exeCloseString, varStringPosition);
+
+                        if (exeStringPositionEnd != -1)
+                        {
+                            // 7. Dodanie długości exeCloseString do pozycji
+                            exeCloseStringEnd = exeStringPositionEnd + exeCloseString.Length;
+
+                            // 8. Skopiowanie do exeNode tekstu od exeStringPositionStart do exeCloseStringEnd
+                            int lengthToCopy = exeCloseStringEnd - exeStringPositionStart;
+                            exeNode = fileContent.Substring(exeStringPositionStart, lengthToCopy);
+                        }
+                    }
+                }
+
+                // 9. Wylistowanie wszystkich zmiennych z zawartością
+                Console.WriteLine("=== ZMIENNE I ICH ZAWARTOŚĆ ===");
+                Console.WriteLine($"filePath: \t\t{filePath}");
+                Console.WriteLine($"varString: \t\t{varString}");
+                Console.WriteLine($"varStringPosition: \t{varStringPosition}");
+                Console.WriteLine($"exeString: \t\t{exeString}");
+                Console.WriteLine($"exeStringPositionStart: {exeStringPositionStart}");
+                Console.WriteLine($"nameString: \t\t{nameString}");
+                Console.WriteLine($"nameStringPositionStart:{nameStringPositionStart}");
+                Console.WriteLine($"exeName: \t\t{exeName}");
+                Console.WriteLine($"exeCloseString: \t{exeCloseString}");
+                Console.WriteLine($"exeStringPositionEnd: \t{exeStringPositionEnd}");
+                Console.WriteLine($"exeCloseStringEnd: \t{exeCloseStringEnd}");
+                
+                Console.WriteLine("\n=== ZAWARTOSC exeNode ===");
+                if (!string.IsNullOrEmpty(exeNode))
+                {
+                    Console.WriteLine(exeNode);
+                }
+                else
+                {
+                    Console.WriteLine("[Brak danych - nie znaleziono wszystkich wymaganych ciągów znaków]");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Wystąpił nieoczekiwany błąd: {ex.Message}");
+            }
+
+            // Zatrzymanie konsoli, aby można było przeczytać wynik
+            Console.WriteLine("\nNaciśnij dowolny klawisz, aby zakończyć...");
+            Console.ReadKey();
+        }
+    }
+}
