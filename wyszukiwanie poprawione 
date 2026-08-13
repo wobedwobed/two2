@@ -1,0 +1,244 @@
+using System;
+using System.IO;
+using System.Collections.Generic;
+using System.Web.Script.Serialization; // Wymaga dodania referencji do System.Web.Extensions
+
+namespace TextSearchApp
+{
+    // Klasa reprezentująca główny raport z przeszukiwania
+    public class SearchReport
+    {
+        public string FileName { get; set; }
+        public string ExecutionTimestamp { get; set; }
+        public List<OccurrenceResult> Occurrences { get; set; } = new List<OccurrenceResult>();
+    }
+
+    // Klasa reprezentująca pojedyncze wystąpienie w pętli
+    public class OccurrenceResult
+    {
+        public int OccurrenceNumber { get; set; }
+        public string LoopTimestamp { get; set; }
+        public int VarStringPosition { get; set; }
+        public int ExeStringPositionStart { get; set; }
+        public int NameStringPositionStart { get; set; }
+        public string ExeName { get; set; }
+        public int ExeStringPositionEnd { get; set; }
+        public int ExeCloseStringEnd { get; set; }
+        public string ExeNode { get; set; }
+    }
+
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            // 1. Definicja parametrów początkowych
+            string filePath = @"C:\test\plik.txt"; // Zmień na właściwą ścieżkę
+            string varString = "varString";
+            string exeString = "exeString";
+            string nameString = "nameString";
+            string exeCloseString = "exeCloseString";
+
+            try
+            {
+                if (!File.Exists(filePath))
+                {
+                    Console.WriteLine($"Błąd: Plik {filePath} nie istnieje.");
+                    Console.ReadLine();
+                    return;
+                }
+
+                // Inicjalizacja głównego obiektu raportu
+                SearchReport report = new SearchReport
+                {
+                    FileName = Path.GetFileName(filePath),
+                    ExecutionTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff")
+                };
+
+                // Otwarcie i wczytanie zawartości pliku tekstowego
+                string fileContent = File.ReadAllText(filePath);
+
+                int searchStartIndex = 0;
+                int occurrenceCount = 0;
+
+                Console.WriteLine($"Rozpoczęto przeszukiwanie: {report.ExecutionTimestamp}");
+                Console.WriteLine($"Szukam wystąpień ciągu: '{varString}' w pliku: {filePath}\n");
+
+                // Pętla wyszukująca wszystkie wystąpienia varString
+                while ((searchStartIndex < fileContent.Length) && 
+                       (searchStartIndex = fileContent.IndexOf(varString, searchStartIndex)) != -1)
+                {
+                    occurrenceCount++;
+                    int varStringPosition = searchStartIndex;
+
+                    // Inicjalizacja obiektu dla bieżącego wystąpienia z timestampem pętli
+                    OccurrenceResult occurrence = new OccurrenceResult
+                    {
+                        OccurrenceNumber = occurrenceCount,
+                        LoopTimestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                        VarStringPosition = varStringPosition,
+                        ExeStringPositionStart = -1,
+                        NameStringPositionStart = -1,
+                        ExeStringPositionEnd = -1,
+                        ExeCloseStringEnd = -1,
+                        ExeName = string.Empty,
+                        ExeNode = string.Empty
+                    };
+
+                    // Szukanie wstecz wystąpienia exeString
+                    occurrence.ExeStringPositionStart = fileContent.LastIndexOf(exeString, varStringPosition);
+
+                    if (occurrence.ExeStringPositionStart != -1)
+                    {
+                        // Szukanie naprzód nameString
+                        occurrence.NameStringPositionStart = fileContent.IndexOf(nameString, occurrence.ExeStringPositionStart);
+
+                        if (occurrence.NameStringPositionStart != -1)
+                        {
+                            int lineStart = fileContent.LastIndexOf('\n', occurrence.NameStringPositionStart);
+                            lineStart = (lineStart == -1) ? 0 : lineStart + 1;
+
+                            int lineEndCR = fileContent.IndexOf('\r', occurrence.NameStringPositionStart);
+                            int lineEndLF = fileContent.IndexOf('\n', occurrence.NameStringPositionStart);
+                            
+                            int lineEnd = lineEndCR;
+                            if (lineEndCR == -1 || (lineEndLF != -1 && lineEndLF < lineEndCR))
+                            {
+                                lineEnd = lineEndLF;
+                            }
+                            if (lineEnd == -1)
+                            {
+                                lineEnd = fileContent.Length;
+                            }
+
+                            occurrence.ExeName = fileContent.Substring(lineStart, lineEnd - lineStart).Trim();
+                        }
+
+                        // Szukanie naprzód exeCloseString
+                        occurrence.ExeStringPositionEnd = fileContent.IndexOf(exeCloseString, varStringPosition);
+
+                        if (occurrence.ExeStringPositionEnd != -1)
+                        {
+                            occurrence.ExeCloseStringEnd = occurrence.ExeStringPositionEnd + exeCloseString.Length;
+
+                            if (occurrence.ExeCloseStringEnd > occurrence.ExeStringPositionStart)
+                            {
+                                int lengthToCopy = occurrence.ExeCloseStringEnd - occurrence.ExeStringPositionStart;
+                                occurrence.ExeNode = fileContent.Substring(occurrence.ExeStringPositionStart, lengthToCopy);
+                            }
+                        }
+                    }
+
+                    // Dodanie wyniku do głównego raportu
+                    report.Occurrences.Add(occurrence);
+
+                    // Wypisanie informacji na konsolę (dla podglądu)
+                    Console.WriteLine($"Znaleziono wystąpienie #{occurrenceCount} o czasie {occurrence.LoopTimestamp}");
+
+                    // Przesunięcie indeksu startowego
+                    searchStartIndex = varStringPosition + varString.Length;
+                }
+
+                if (occurrenceCount == 0)
+                {
+                    Console.WriteLine($"Nie znaleziono żadnego wystąpienia '{varString}' w pliku.");
+                }
+                else
+                {
+                    // -------------------------------------------------------------
+                    // ZAPIS DO PLIKU JSON
+                    // -------------------------------------------------------------
+                    
+                    // Ustalenie ścieżki i nazwy pliku JSON (w tym samym folderze co plik txt)
+                    string directoryPath = Path.GetDirectoryName(filePath);
+                    string originalFileNameWithoutExt = Path.GetFileNameWithoutExtension(filePath);
+                    string jsonFileName = $"{originalFileNameWithoutExt}_wyniki.json";
+                    string jsonFilePath = Path.Combine(directoryPath, jsonFileName);
+
+                    // Konfiguracja i serializacja obiektu report do formatu JSON
+                    JavaScriptSerializer serializer = new JavaScriptSerializer();
+                    // Zwiększenie limitu długości stringa (domyślnie jest mały, exeNode może być duże)
+                    serializer.MaxJsonLength = Int32.MaxValue; 
+                    
+                    // Generowanie stringa JSON
+                    string jsonOutput = serializer.Serialize(report);
+
+                    // Opcjonalne ładne formatowanie JSON-a (tzw. Pretty Print).
+                    // JavaScriptSerializer domyślnie generuje kod w jednej linijce.
+                    jsonOutput = FormatJson(jsonOutput);
+
+                    // Zapis tekstowy do pliku
+                    File.WriteAllText(jsonFilePath, jsonOutput);
+
+                    Console.WriteLine($"\nZakończono. Łącznie znaleziono wystąpień: {occurrenceCount}");
+                    Console.WriteLine($"Wyniki zostały pomyślnie zapisane do pliku:");
+                    Console.WriteLine(jsonFilePath);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Wystąpił nieoczekiwany błąd: {ex.Message}");
+            }
+
+            Console.WriteLine("\nNaciśnij dowolny klawisz, aby zakończyć...");
+            Console.ReadKey();
+        }
+
+        // Metoda pomocnicza ułatwiająca formatowanie pliku JSON (żeby był czytelny dla oka, a nie w jednej linii)
+        static string FormatJson(string json)
+        {
+            const string INDENT_STRING = "  ";
+            int indentation = 0;
+            int quoteCount = 0;
+            var result = new System.Text.StringBuilder();
+
+            for (int i = 0; i < json.Length; i++)
+            {
+                var ch = json[i];
+                switch (ch)
+                {
+                    case '"':
+                        quoteCount++;
+                        result.Append(ch);
+                        break;
+                    case '{':
+                    case '[':
+                        result.Append(ch);
+                        if (quoteCount % 2 == 0)
+                        {
+                            result.AppendLine();
+                            indentation++;
+                            result.Append(new string(' ', indentation * 2));
+                        }
+                        break;
+                    case '}':
+                    case ']':
+                        if (quoteCount % 2 == 0)
+                        {
+                            result.AppendLine();
+                            indentation--;
+                            result.Append(new string(' ', indentation * 2));
+                        }
+                        result.Append(ch);
+                        break;
+                    case ',':
+                        result.Append(ch);
+                        if (quoteCount % 2 == 0)
+                        {
+                            result.AppendLine();
+                            result.Append(new string(' ', indentation * 2));
+                        }
+                        break;
+                    case ':':
+                        result.Append(ch);
+                        if (quoteCount % 2 == 0)
+                            result.Append(" ");
+                        break;
+                    default:
+                        result.Append(ch);
+                        break;
+                }
+            }
+            return result.ToString();
+        }
+    }
+}
