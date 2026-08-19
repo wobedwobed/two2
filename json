@@ -1,0 +1,145 @@
+{
+  "object_name": "spPrzeplywDanych_Wykonaj",
+  "object_type": "procedura",
+  "tree_structure": {
+    "name": "spPrzeplywDanych_Wykonaj",
+    "type": "procedura",
+    "dependencies": [
+      {
+        "name": "PrzeplywDanych",
+        "type": "tabela"
+      },
+      {
+        "name": "spAlgorytmDELETE_Wykonaj",
+        "type": "procedura",
+        "dependencies": [
+          {
+            "name": "spLogOperWstawKrokEnd",
+            "type": "procedura",
+            "dependencies": [
+              {
+                "name": "Log",
+                "type": "tabela"
+              }
+            ]
+          },
+          {
+            "name": "spLogOperWstawKrokN",
+            "type": "procedura"
+          },
+          {
+            "name": "spLogOperWstawKrokStart",
+            "type": "procedura"
+          },
+          {
+            "name": "spPobierzOperId",
+            "type": "procedura",
+            "dependencies": [
+              {
+                "name": "seqOper",
+                "type": "sekwencja"
+              }
+            ]
+          },
+          {
+            "name": "spWygenerujSQLInsert",
+            "type": "procedura",
+            "dependencies": [
+              {
+                "name": "fnKolumnaWyrazenieTT2String",
+                "type": "funkcja",
+                "dependencies": [
+                  {
+                    "name": "KolumnaWyrazenieTT",
+                    "type": "tabela"
+                  }
+                ]
+              },
+              {
+                "name": "fnSTR_Split",
+                "type": "funkcja"
+              },
+              {
+                "name": "META_ColumnsTT",
+                "type": "tabela"
+              },
+              {
+                "name": "print2",
+                "type": "procedura"
+              },
+              {
+                "name": "spMETA_Table_GetColumns2",
+                "type": "procedura"
+              }
+            ]
+          },
+          {
+            "name": "spWygenerujSQLSelectRoznicaZbiorow",
+            "type": "procedura"
+          }
+        ]
+      },
+      {
+        "name": "spAlgorytmMERGE_Wykonaj",
+        "type": "procedura",
+        "dependencies": [
+          {
+            "name": "spWygenerujSQLMerge",
+            "type": "procedura",
+            "dependencies": [
+              {
+                "name": "fnMETA_GetColumnsString2",
+                "type": "funkcja"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "spAlgorytmSTAGE_Wykonaj",
+        "type": "procedura"
+      },
+      {
+        "name": "spPrzeplywDanychKonfiguracjaAlgorytmu_PobierzWartosc",
+        "type": "procedura",
+        "dependencies": [
+          {
+            "name": "PrzeplywDanychKonfiguracjaAlgorytmu",
+            "type": "tabela",
+            "dependencies": [
+              {
+                "name": "seqPrzeplywDanychKonfiguracjaAlgorytmu",
+                "type": "sekwencja"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "flat_dependencies": [
+    { "name": "PrzeplywDanych", "type": "tabela" },
+    { "name": "spAlgorytmDELETE_Wykonaj", "type": "procedura" },
+    { "name": "spLogOperWstawKrokEnd", "type": "procedura" },
+    { "name": "Log", "type": "tabela" },
+    { "name": "spLogOperWstawKrokN", "type": "procedura" },
+    { "name": "spLogOperWstawKrokStart", "type": "procedura" },
+    { "name": "spPobierzOperId", "type": "procedura" },
+    { "name": "seqOper", "type": "sekwencja" },
+    { "name": "spWygenerujSQLInsert", "type": "procedura" },
+    { "name": "fnKolumnaWyrazenieTT2String", "type": "funkcja" },
+    { "name": "KolumnaWyrazenieTT", "type": "tabela" },
+    { "name": "fnSTR_Split", "type": "funkcja" },
+    { "name": "META_ColumnsTT", "type": "tabela" },
+    { "name": "print2", "type": "procedura" },
+    { "name": "spMETA_Table_GetColumns2", "type": "procedura" },
+    { "name": "spWygenerujSQLSelectRoznicaZbiorow", "type": "procedura" },
+    { "name": "spAlgorytmMERGE_Wykonaj", "type": "procedura" },
+    { "name": "spWygenerujSQLMerge", "type": "procedura" },
+    { "name": "fnMETA_GetColumnsString2", "type": "funkcja" },
+    { "name": "spAlgorytmSTAGE_Wykonaj", "type": "procedura" },
+    { "name": "spPrzeplywDanychKonfiguracjaAlgorytmu_PobierzWartosc", "type": "procedura" },
+    { "name": "PrzeplywDanychKonfiguracjaAlgorytmu", "type": "tabela" },
+    { "name": "seqPrzeplywDanychKonfiguracjaAlgorytmu", "type": "sekwencja" }
+  ]
+}
