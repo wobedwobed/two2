@@ -1,0 +1,109 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Xml.Linq;
+
+namespace DtsxVariableScanner
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Console.WriteLine("=== Analizator zmiennych SSIS (.dtsx) ===");
+
+            // Pobranie ścieżki do pliku z argumentów konsoli lub z wejścia użytkownika
+            string filePath = args.Length > 0 ? args[0] : null;
+
+            while (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            {
+                Console.Write("Podaj prawidłową ścieżkę do pliku .dtsx: ");
+                filePath = Console.ReadLine();
+                
+                // Usunięcie cudzysłowów, jeśli użytkownik przeciągnął plik do okna konsoli
+                if (filePath != null) 
+                    filePath = filePath.Trim('\"', ' ');
+            }
+
+            try
+            {
+                AnalyzeDtsx(filePath);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"\nWystąpił błąd podczas analizy pliku: {ex.Message}");
+            }
+
+            Console.WriteLine("\nNaciśnij dowolny klawisz, aby zakończyć...");
+            Console.ReadKey();
+        }
+
+        static void AnalyzeDtsx(string filePath)
+        {
+            // Ładowanie pliku XML
+            XDocument doc = XDocument.Load(filePath);
+            XNamespace dts = "www.microsoft.com/SqlServer/Dts";
+
+            // 1. Wyciągnięcie wszystkich zmiennych z pakietu
+            var variables = doc.Descendants(dts + "Variable")
+                .Select(v => new
+                {
+                    Name = v.Attribute(dts + "ObjectName")?.Value,
+                    Namespace = v.Attribute(dts + "Namespace")?.Value ?? "User",
+                    DtsId = v.Attribute(dts + "DTSID")?.Value // Unikalny GUID zmiennej
+                })
+                .Where(v => !string.IsNullOrEmpty(v.Name))
+                .ToList();
+
+            Console.WriteLine($"\nZnaleziono zmiennych: {variables.Count}\n");
+            Console.WriteLine(new string('-', 50));
+
+            // 2. Wyciągnięcie wszystkich Executables (Taski, Kontenery, itp.)
+            // Pomijamy główny korzeń (pakiet doc.Root), aby badać tylko konkretne kroki w pakiecie
+            var executables = doc.Descendants(dts + "Executable")
+                .Where(e => e != doc.Root)
+                .ToList();
+
+            // 3. Sprawdzanie użycia każdej zmiennej
+            foreach (var variable in variables.OrderBy(v => v.Namespace).ThenBy(v => v.Name))
+            {
+                Console.WriteLine($"Zmienna: [{variable.Namespace}::{variable.Name}]");
+
+                bool isUsed = false;
+                string varRefByName = $"{variable.Namespace}::{variable.Name}";
+                string varRefById = variable.DtsId; 
+
+                foreach (var exec in executables)
+                {
+                    string execName = exec.Attribute(dts + "ObjectName")?.Value ?? "Nieznany Executable";
+
+                    // Tworzymy kopię węzła i usuwamy z niej zagnieżdżone executables.
+                    // Dzięki temu unikamy fałszywych trafień (np. że kontener używa zmiennej, 
+                    // podczas gdy to jego wewnętrzny Task jej używa).
+                    XElement execClone = new XElement(exec);
+                    execClone.Descendants(dts + "Executable").Remove();
+
+                    string xmlContent = execClone.ToString();
+
+                    // SSIS może odwoływać się do zmiennej po nazwie (np. w Expression) 
+                    // lub po jej DTSID (np. w mapowaniu właściwości).
+                    bool containsName = xmlContent.IndexOf(varRefByName, StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool containsId = !string.IsNullOrEmpty(varRefById) && 
+                                      xmlContent.IndexOf(varRefById, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                    if (containsName || containsId)
+                    {
+                        Console.WriteLine($"  -> Wykorzystana w: {execName}");
+                        isUsed = true;
+                    }
+                }
+
+                if (!isUsed)
+                {
+                    Console.WriteLine("  -> Brak bezpośredniego użycia w executables.");
+                }
+                
+                Console.WriteLine();
+            }
+        }
+    }
+}
