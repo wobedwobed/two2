@@ -1,0 +1,243 @@
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
+using System.IO;
+using System.Linq;
+using System.Xml.Linq;
+
+namespace DtsxVariableScannerToSql
+{
+    public class VariableUsage
+    {
+        public string FileName { get; set; }
+        public string FilePath { get; set; }
+        public string Scope { get; set; }
+        public string VariableName { get; set; }
+        public string ExecutableName { get; set; }
+        public string ExecutablePath { get; set; } // Nowe pole na ścieżkę
+    }
+
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Console.WriteLine("=== Analizator zmiennych SSIS (wielu plików) do bazy SQL ===");
+
+            string folderPath = PromptForInput("Podaj ścieżkę do folderu z plikami .dtsx: ");
+            while (!Directory.Exists(folderPath))
+            {
+                Console.WriteLine("Podany folder nie istnieje!");
+                folderPath = PromptForInput("Podaj poprawną ścieżkę do folderu: ");
+            }
+
+            string serverName = PromptForInput("Podaj nazwę serwera SQL (np. localhost lub .\\SQLEXPRESS): ");
+            string databaseName = PromptForInput("Podaj nazwę bazy danych: ");
+            string schemaName = PromptForInput("Podaj nazwę schematu (np. dbo): ", "dbo");
+            string tableName = PromptForInput("Podaj nazwę tabeli (np. SsisVariables): ", "SsisVariables");
+
+            try
+            {
+                string[] dtsxFiles = Directory.GetFiles(folderPath, "*.dtsx", SearchOption.AllDirectories);
+                Console.WriteLine($"\nZnaleziono {dtsxFiles.Length} plików .dtsx. Rozpoczynam analizę...\n");
+
+                List<VariableUsage> allResults = new List<VariableUsage>();
+
+                foreach (string filePath in dtsxFiles)
+                {
+                    try
+                    {
+                        Console.WriteLine($"Skanowanie: {Path.GetFileName(filePath)}");
+                        var fileResults = AnalyzeDtsx(filePath);
+                        allResults.AddRange(fileResults);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"  [BŁĄD] Nie można przetworzyć pliku {filePath}: {ex.Message}");
+                    }
+                }
+
+                Console.WriteLine($"\nZakończono analizę wszystkich plików. Znaleziono łącznie {allResults.Count} powiązań/rekordów.");
+
+                if (allResults.Count > 0)
+                {
+                    Console.WriteLine("Zapisywanie do bazy danych...");
+                    SaveToDatabase(allResults, serverName, databaseName, schemaName, tableName);
+                    Console.WriteLine("Zapis zakończony sukcesem!");
+                }
+                else
+                {
+                    Console.WriteLine("Brak danych do zapisania w bazie.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"\nWystąpił błąd krytyczny: {ex.Message}");
+            }
+
+            Console.WriteLine("\nNaciśnij dowolny klawisz, aby zakończyć...");
+            Console.ReadKey();
+        }
+
+        static string PromptForInput(string message, string defaultValue = "")
+        {
+            Console.Write(message);
+            string input = Console.ReadLine()?.Trim('\"', ' ');
+            return string.IsNullOrWhiteSpace(input) ? defaultValue : input;
+        }
+
+        static List<VariableUsage> AnalyzeDtsx(string filePath)
+        {
+            var usageList = new List<VariableUsage>();
+            string fileName = Path.GetFileName(filePath);
+
+            XDocument doc = XDocument.Load(filePath);
+            XNamespace dts = "www.microsoft.com/SqlServer/Dts";
+
+            var variables = doc.Descendants(dts + "Variable")
+                .Select(v =>
+                {
+                    var parentExecutable = v.Ancestors(dts + "Executable").FirstOrDefault();
+                    string scopeName = parentExecutable != null
+                        ? parentExecutable.Attribute(dts + "ObjectName")?.Value
+                        : "Brak ustalonego zakresu";
+
+                    return new
+                    {
+                        Name = v.Attribute(dts + "ObjectName")?.Value,
+                        Namespace = v.Attribute(dts + "Namespace")?.Value ?? "User",
+                        DtsId = v.Attribute(dts + "DTSID")?.Value,
+                        Scope = scopeName
+                    };
+                })
+                .Where(v => !string.IsNullOrEmpty(v.Name))
+                .ToList();
+
+            var executables = doc.Descendants(dts + "Executable")
+                .Where(e => e != doc.Root)
+                .ToList();
+
+            foreach (var variable in variables)
+            {
+                bool isUsed = false;
+                string fullVariableName = $"{variable.Namespace}::{variable.Name}";
+                string varRefByName = fullVariableName;
+                string varRefById = variable.DtsId;
+
+                foreach (var exec in executables)
+                {
+                    string execName = exec.Attribute(dts + "ObjectName")?.Value ?? "Nieznany Executable";
+
+                    // Budowanie ścieżki Executable.
+                    // Pobieramy ten węzeł i wszystkie jego węzły nadrzędne (AncestorsAndSelf) będące "Executable".
+                    // Ponieważ metoda idzie od dołu do góry (od węzła do root'a), musimy odwrócić wynik (Reverse),
+                    // by wygenerować ścieżkę w formacie: Root \ Kontener \ Task
+                    var pathElements = exec.AncestorsAndSelf(dts + "Executable")
+                                           .Select(e => e.Attribute(dts + "ObjectName")?.Value)
+                                           .Where(name => !string.IsNullOrEmpty(name))
+                                           .Reverse();
+                    
+                    string execPath = string.Join(@"\", pathElements);
+
+                    XElement execClone = new XElement(exec);
+                    execClone.Descendants(dts + "Executable").Remove();
+                    string xmlContent = execClone.ToString();
+
+                    bool containsName = xmlContent.IndexOf(varRefByName, StringComparison.OrdinalIgnoreCase) >= 0;
+                    bool containsId = !string.IsNullOrEmpty(varRefById) &&
+                                      xmlContent.IndexOf(varRefById, StringComparison.OrdinalIgnoreCase) >= 0;
+
+                    if (containsName || containsId)
+                    {
+                        usageList.Add(new VariableUsage
+                        {
+                            FileName = fileName,
+                            FilePath = filePath,
+                            Scope = variable.Scope,
+                            VariableName = fullVariableName,
+                            ExecutableName = execName,
+                            ExecutablePath = execPath // Zapisanie ścieżki
+                        });
+                        isUsed = true;
+                    }
+                }
+
+                if (!isUsed)
+                {
+                    usageList.Add(new VariableUsage
+                    {
+                        FileName = fileName,
+                        FilePath = filePath,
+                        Scope = variable.Scope,
+                        VariableName = fullVariableName,
+                        ExecutableName = null,
+                        ExecutablePath = null // Null dla braku powiązania
+                    });
+                }
+            }
+
+            return usageList;
+        }
+
+        static void SaveToDatabase(List<VariableUsage> data, string server, string database, string schema, string table)
+        {
+            schema = schema.Replace("]", "]]");
+            table = table.Replace("]", "]]");
+
+            SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder
+            {
+                DataSource = server,
+                InitialCatalog = database,
+                IntegratedSecurity = true
+            };
+
+            using (SqlConnection conn = new SqlConnection(builder.ConnectionString))
+            {
+                conn.Open();
+
+                // Dodano pole [ExecutablePath] NVARCHAR(1000)
+                string createTableSql = $@"
+                    IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[{schema}].[{table}]') AND type in (N'U'))
+                    BEGIN
+                        CREATE TABLE [{schema}].[{table}] (
+                            [Id] INT IDENTITY(1,1) PRIMARY KEY,
+                            [FileName] NVARCHAR(255) NOT NULL,
+                            [FilePath] NVARCHAR(1000) NOT NULL,
+                            [Scope] NVARCHAR(255) NOT NULL,
+                            [VariableName] NVARCHAR(255) NOT NULL,
+                            [ExecutableName] NVARCHAR(255) NULL,
+                            [ExecutablePath] NVARCHAR(1000) NULL,
+                            [CreatedDate] DATETIME DEFAULT GETDATE()
+                        )
+                    END";
+
+                using (SqlCommand createCmd = new SqlCommand(createTableSql, conn))
+                {
+                    createCmd.ExecuteNonQuery();
+                }
+
+                // Zaktualizowane zapytanie INSERT
+                string insertSql = $@"
+                    INSERT INTO [{schema}].[{table}] 
+                    ([FileName], [FilePath], [Scope], [VariableName], [ExecutableName], [ExecutablePath])
+                    VALUES 
+                    (@FileName, @FilePath, @Scope, @VariableName, @ExecutableName, @ExecutablePath)";
+
+                foreach (var item in data)
+                {
+                    using (SqlCommand insertCmd = new SqlCommand(insertSql, conn))
+                    {
+                        insertCmd.Parameters.AddWithValue("@FileName", item.FileName);
+                        insertCmd.Parameters.AddWithValue("@FilePath", item.FilePath);
+                        insertCmd.Parameters.AddWithValue("@Scope", item.Scope);
+                        insertCmd.Parameters.AddWithValue("@VariableName", item.VariableName);
+                        insertCmd.Parameters.AddWithValue("@ExecutableName", (object)item.ExecutableName ?? DBNull.Value);
+                        insertCmd.Parameters.AddWithValue("@ExecutablePath", (object)item.ExecutablePath ?? DBNull.Value);
+
+                        insertCmd.ExecuteNonQuery();
+                    }
+                }
+            }
+        }
+    }
+}
