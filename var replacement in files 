@@ -1,0 +1,127 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.RegularExpressions;
+
+namespace SsisModifier
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            // Możesz podać ścieżkę w argumentach wywołania. Domyślnie używa obecnego katalogu.
+            string directoryPath = args.Length > 0 ? args[0] : Directory.GetCurrentDirectory();
+            
+            string variableName = "pkg_TargetTable";
+            string exampleFileName = "example.dtsx";
+            string exampleFilePath = Path.Combine(directoryPath, exampleFileName);
+
+            Console.WriteLine($"Przeszukiwanie katalogu: {directoryPath}");
+
+            if (!Directory.Exists(directoryPath))
+            {
+                Console.WriteLine("Podany katalog nie istnieje.");
+                return;
+            }
+
+            if (!File.Exists(exampleFilePath))
+            {
+                Console.WriteLine($"Nie znaleziono pliku wzorcowego: {exampleFileName} w podanym katalogu.");
+                return;
+            }
+
+            // 1. Pobranie wszystkich plików .dtsx
+            string[] allDtsxFiles = Directory.GetFiles(directoryPath, "*.dtsx");
+            
+            // Kolekcja filesAndVarValues (Klucz to ścieżka do pliku, Wartość to varValue)
+            var filesAndVarValues = new Dictionary<string, string>();
+
+            foreach (var file in allDtsxFiles)
+            {
+                string fileName = Path.GetFileName(file);
+                string fileNameWithoutExt = Path.GetFileNameWithoutExtension(file);
+
+                // Pomijamy pliki z sufiksem "__" oraz sam plik example.dtsx
+                if (fileNameWithoutExt.EndsWith("__") || fileName.Equals(exampleFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string content = File.ReadAllText(file);
+                string varValue = GetVariableValue(content, variableName);
+
+                if (varValue != null)
+                {
+                    filesAndVarValues.Add(file, varValue);
+                    Console.WriteLine($"Znalazłem zmienną w {fileName}. Wartość: {varValue}");
+                }
+            }
+
+            Console.WriteLine("\nRozpoczynam tworzenie kopii na podstawie pliku example.dtsx...\n");
+
+            // Wczytanie zawartości pliku example.dtsx
+            string exampleContent = File.ReadAllText(exampleFilePath);
+            
+            // Wyciągamy cały blok XML dla zmiennej w pliku example, aby bezpiecznie podmienić stringa
+            string exampleOldBlock = GetVariableBlock(exampleContent, variableName);
+            string exampleVarValue = GetVariableValue(exampleContent, variableName);
+
+            if (exampleOldBlock == null || exampleVarValue == null)
+            {
+                Console.WriteLine($"Plik {exampleFileName} nie zawiera poprawnej struktury zmiennej {variableName}!");
+                return;
+            }
+
+            // 2. Iteracja przez znalezione pliki (tablica/kolekcja files)
+            foreach (var kvp in filesAndVarValues)
+            {
+                string sourceFilePath = kvp.Key;
+                string newVarValue = kvp.Value;
+                
+                string originalFileNameWithoutExt = Path.GetFileNameWithoutExtension(sourceFilePath);
+                
+                // Tworzenie nowej nazwy pliku z sufiksem "__"
+                string newFileName = originalFileNameWithoutExt + "__.dtsx";
+                string newFilePath = Path.Combine(directoryPath, newFileName);
+
+                // Tworzenie nowej zawartości za pomocą "zwykłego string replacement"
+                // Najpierw podmieniamy samą wartość wewnątrz wyciętego bloku:
+                string newBlock = exampleOldBlock.Replace($">{exampleVarValue}<", $">{newVarValue}<");
+                
+                // Następnie podmieniamy cały blok w głównym pliku, dzięki temu nie zepsujemy 
+                // przypadkowych słów w innych miejscach pliku .dtsx
+                string newContent = exampleContent.Replace(exampleOldBlock, newBlock);
+
+                // Zapisanie zmodyfikowanego pliku pod nową nazwą
+                File.WriteAllText(newFilePath, newContent);
+                Console.WriteLine($"Utworzono: {newFileName} (Wartość pkg_TargetTable: {newVarValue})");
+            }
+
+            Console.WriteLine("\nZakończono pomyślnie. Naciśnij dowolny klawisz, aby wyjść...");
+            Console.ReadKey();
+        }
+
+        /// <summary>
+        /// Wyciąga samą wartość interesującej nas zmiennej z pliku .dtsx
+        /// </summary>
+        static string GetVariableValue(string content, string varName)
+        {
+            // Wyszukuje zmiennej po DTS:ObjectName, a następnie łapie wartość wewnątrz <DTS:VariableValue>
+            string pattern = $@"DTS:ObjectName=""{varName}"".*?\<DTS:VariableValue[^>]*\>(.*?)\<\/DTS:VariableValue\>";
+            Match match = Regex.Match(content, pattern, RegexOptions.Singleline);
+            
+            return match.Success ? match.Groups[1].Value : null;
+        }
+
+        /// <summary>
+        /// Wyciąga cały string tagu <DTS:VariableValue>...<DTS:VariableValue>, aby można było bezpiecznie zrobić Replace()
+        /// </summary>
+        static string GetVariableBlock(string content, string varName)
+        {
+            string pattern = $@"DTS:ObjectName=""{varName}"".*?(\<DTS:VariableValue[^>]*\>.*?\<\/DTS:VariableValue\>)";
+            Match match = Regex.Match(content, pattern, RegexOptions.Singleline);
+            
+            return match.Success ? match.Groups[1].Value : null;
+        }
+    }
+}
