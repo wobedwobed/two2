@@ -1,0 +1,36 @@
+# Konfiguracja połączenia i ścieżki zapisu
+$serverName = "UAT"                           # Nazwa lub IP serwera UAT
+$database   = "tempdb"
+$localPath  = "C:\LokalnyKatalog\EK_lokalny.bak" # Ścieżka na Twoim komputerze
+
+# Połączenie z użyciem Windows Authentication (dla SQL Auth użyj: "Server=$serverName;Database=$database;User Id=TWOJ_USER;Password=TWOJE_HASLO;")
+$connectionString = "Server=$serverName;Database=$database;Integrated Security=True;Encrypt=False;"
+
+$conn = New-Object System.Data.SqlClient.SqlConnection($connectionString)
+$conn.Open()
+
+$cmd = $conn.CreateCommand()
+$cmd.CommandText = "SELECT BackupFile FROM tempdb.dbo.TempBackupBlob"
+$cmd.CommandTimeout = 0 # Brak limitu czasu dla dużych plików
+
+$reader = $cmd.ExecuteReader([System.Data.CommandBehavior]::SequentialAccess)
+
+if ($reader.Read()) {
+    $fs = [System.IO.File]::Create($localPath)
+    $bufferSize = 8192
+    $buffer = New-Object byte[] $bufferSize
+    $bytesRead = 0
+    $fieldOffset = 0
+
+    while (($bytesRead = $reader.GetBytes(0, $fieldOffset, $buffer, 0, $bufferSize)) -gt 0) {
+        $fs.Write($buffer, 0, $bytesRead)
+        $fieldOffset += $bytesRead
+    }
+    $fs.Close()
+    Write-Host "Plik został pomyślnie pobrany do: $localPath" -ForegroundColor Green
+} else {
+    Write-Host "Nie znaleziono danych backupu w tabeli." -ForegroundColor Red
+}
+
+$reader.Close()
+$conn.Close()
