@@ -1,0 +1,23 @@
+-- 1. Utworzenie backupu w folderze temp serwera SQL
+BACKUP DATABASE [EK] 
+TO DISK = 'C:\Windows\Temp\EK_transfer.bak' 
+WITH FORMAT, INIT;
+
+-- 2. Stworzenie tabeli tymczasowej
+IF OBJECT_ID('tempdb.dbo.TempBackupBlob') IS NOT NULL 
+    DROP TABLE tempdb.dbo.TempBackupBlob;
+
+CREATE TABLE tempdb.dbo.TempBackupBlob (
+    ID INT IDENTITY(1,1),
+    BackupFile VARBINARY(MAX)
+);
+
+-- 3. Wczytanie pliku .bak do kolumny binarnej
+INSERT INTO tempdb.dbo.TempBackupBlob (BackupFile)
+SELECT BulkColumn 
+FROM OPENROWSET(BULK 'C:\Windows\Temp\EK_transfer.bak', SINGLE_BLOB) AS x;
+
+-- 4. Opcjonalne usunięcie pliku z dysku serwera (wymaga włączonego xp_cmdshell)
+-- EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
+-- EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;
+-- EXEC xp_cmdshell 'del C:\Windows\Temp\EK_transfer.bak';
