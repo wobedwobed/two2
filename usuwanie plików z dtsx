@@ -1,0 +1,96 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Xml.Linq;
+
+namespace DtprojCleaner
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            Console.Write("Podaj ścieżkę do folderu z plikiem/plikami .dtproj: ");
+            string folderPath = Console.ReadLine();
+
+            if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath))
+            {
+                Console.WriteLine("Podany folder nie istnieje.");
+                Console.ReadKey();
+                return;
+            }
+
+            // Pobranie wszystkich plików .dtproj w podanym folderze
+            string[] dtprojFiles = Directory.GetFiles(folderPath, "*.dtproj");
+
+            if (dtprojFiles.Length == 0)
+            {
+                Console.WriteLine("Nie znaleziono plików .dtproj w podanym katalogu.");
+                Console.ReadKey();
+                return;
+            }
+
+            // Przestrzeń nazw używana w plikach projektów SSIS
+            XNamespace ssis = "www.microsoft.com/SqlServer/SSIS";
+
+            foreach (string filePath in dtprojFiles)
+            {
+                Console.WriteLine($"\nPrzetwarzanie pliku: {Path.GetFileName(filePath)}");
+
+                try
+                {
+                    XDocument doc = XDocument.Load(filePath);
+
+                    // Szukanie węzłów <SSIS:Package> których atrybut SSIS:Name kończy się na "__.dtsx"
+                    var packagesToRemove = doc.Descendants(ssis + "Package")
+                        .Where(x => 
+                        {
+                            var nameAttr = x.Attribute(ssis + "Name");
+                            return nameAttr != null && nameAttr.Value.EndsWith("__.dtsx", StringComparison.OrdinalIgnoreCase);
+                        })
+                        .ToList();
+
+                    // Szukanie węzłów <SSIS:PackageMetaData> których atrybut SSIS:Name kończy się na "__.dtsx"
+                    var packageMetaDataToRemove = doc.Descendants(ssis + "PackageMetaData")
+                        .Where(x => 
+                        {
+                            var nameAttr = x.Attribute(ssis + "Name");
+                            return nameAttr != null && nameAttr.Value.EndsWith("__.dtsx", StringComparison.OrdinalIgnoreCase);
+                        })
+                        .ToList();
+
+                    int packagesCount = packagesToRemove.Count;
+                    int metaDataCount = packageMetaDataToRemove.Count;
+
+                    // Usuwanie znalezionych węzłów
+                    foreach (var package in packagesToRemove)
+                    {
+                        package.Remove();
+                    }
+
+                    foreach (var metaData in packageMetaDataToRemove)
+                    {
+                        metaData.Remove();
+                    }
+
+                    // Zapis jeśli dokonano jakichkolwiek zmian
+                    if (packagesCount > 0 || metaDataCount > 0)
+                    {
+                        doc.Save(filePath);
+                        Console.WriteLine($"Zakończono sukcesem. Usunięto {packagesCount} wpisów <SSIS:Package> oraz {metaDataCount} wpisów <SSIS:PackageMetaData>.");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Nie znaleziono wpisów pasujących do wzorca ('__.dtsx'). Plik pozostał bez zmian.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Wystąpił błąd podczas modyfikacji pliku: {ex.Message}");
+                }
+            }
+
+            Console.WriteLine("\nOperacja zakończona. Naciśnij dowolny klawisz, aby wyjść...");
+            Console.ReadKey();
+        }
+    }
+}
