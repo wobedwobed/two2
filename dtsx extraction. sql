@@ -1,0 +1,202 @@
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
+using System.IO;
+using System.Xml;
+
+namespace SsisXpathExtractor
+{
+    class Program
+    {
+        // Podmień connection string na właściwy dla Twojej instancji SQL Server
+        private const string ConnectionString = @"Server=localhost;Database=Test1;Integrated Security=True;";
+
+        static void Main(string[] args)
+        {
+            Console.Write("Podaj ścieżkę do katalogu z plikami DTSX: ");
+            string targetDirectory = Console.ReadLine();
+
+            if (string.IsNullOrWhiteSpace(targetDirectory) || !Directory.Exists(targetDirectory))
+            {
+                Console.WriteLine("Podana ścieżka nie istnieje!");
+                Console.ReadKey();
+                return;
+            }
+
+            try
+            {
+                // 1. Automatyczne upewnienie się, że tabela w bazie istnieje
+                Console.WriteLine("Sprawdzanie i przygotowanie bazy danych...");
+                EnsureTableExists();
+
+                // 2. Wyszukiwanie plików *.dtsx
+                Console.WriteLine("Wyszukiwanie plików *.dtsx...");
+                string[] files = Directory.GetFiles(targetDirectory, "*.dtsx", SearchOption.AllDirectories);
+                Console.WriteLine($"Znaleziono {files.Length} plików. Przetwarzanie...");
+
+                DataTable dataTable = CreateDataTableSchema();
+
+                foreach (string filePath in files)
+                {
+                    ProcessDtsxFile(filePath, dataTable);
+                }
+
+                // 3. Zapis danych do bazy
+                if (dataTable.Rows.Count > 0)
+                {
+                    Console.WriteLine($"Zapisywanie {dataTable.Rows.Count} rekordów do bazy danych...");
+                    SaveToDatabase(dataTable);
+                    Console.WriteLine("Zapis zakończony pomyślnie.");
+                }
+                else
+                {
+                    Console.WriteLine("Nie znaleziono danych do zapisania.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Wystąpił błąd: {ex.Message}");
+            }
+
+            Console.WriteLine("Naciśnij dowolny klawisz, aby zakończyć...");
+            Console.ReadKey();
+        }
+
+        /// <summary>
+        /// Tworzy tabelę dbo.ssis_xpath w bazie danych, jeśli jeszcze nie istnieje.
+        /// </summary>
+        private static void EnsureTableExists()
+        {
+            string sqlScript = @"
+                IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ssis_xpath' AND schema_id = SCHEMA_ID('dbo'))
+                BEGIN
+                    CREATE TABLE dbo.ssis_xpath (
+                        id INT IDENTITY(1,1) PRIMARY KEY,
+                        nazwa_pliku NVARCHAR(255) NOT NULL,
+                        sciezka_folderu_pliku NVARCHAR(1000) NOT NULL,
+                        data_modyfikacji_pliku DATETIME NOT NULL,
+                        sciezka_xpath NVARCHAR(1000) NOT NULL,
+                        wartosc_xpath NVARCHAR(MAX) NULL
+                    );
+                END";
+
+            using (SqlConnection connection = new SqlConnection(ConnectionString))
+            {
+                connection.Open();
+                using (SqlCommand command = new SqlCommand(sqlScript, connection))
+                {
+                    command.ExecuteNonQuery();
+                }
+            }
+        }
+
+        private static DataTable CreateDataTableSchema()
+        {
+            DataTable dt = new DataTable("dbo.ssis_xpath");
+            dt.Columns.Add("nazwa_pliku", typeof(string));
+            dt.Columns.Add("sciezka_folderu_pliku", typeof(string));
+            dt.Columns.Add("data_modyfikacji_pliku", typeof(DateTime));
+            dt.Columns.Add("sciezka_xpath", typeof(string));
+            dt.Columns.Add("wartosc_xpath", typeof(string));
+            return dt;
+        }
+
+        private static void ProcessDtsxFile(string filePath, DataTable table)
+        {
+            FileInfo fileInfo = new FileInfo(filePath);
+            string fileName = fileInfo.Name;
+            string folderPath = fileInfo.DirectoryName;
+            DateTime lastModified = fileInfo.LastWriteTime;
+
+            XmlDocument xmlDoc = new XmlDocument();
+            try
+            {
+                xmlDoc.Load(filePath);
+            }
+            catch (XmlException ex)
+            {
+                Console.WriteLine($"Błąd odczytu XML z pliku {fileName}: {ex.Message}");
+                return;
+            }
+
+            XmlNamespaceManager nsmgr = new XmlNamespaceManager(xmlDoc.NameTable);
+            nsmgr.AddNamespace("DTS", "www.microsoft.com/SqlServer/Dts");
+
+            XmlNode execNode = xmlDoc.SelectSingleNode("/DTS:Executable", nsmgr);
+            if (execNode == null) return;
+
+            // Lista atrybutów do odczytu z węzła DTS:Executable
+            string[] execAttributes = new string[]
+            {
+                "CreationDate",
+                "CreationName",
+                "CreatorComputerName",
+                "CreatorName",
+                "DTSID",
+                "ExecutableType",
+                "LastModifiedProductVersion",
+                "LocaleID",
+                "ObjectName",
+                "PackageType",
+                "VersionBuild",
+                "VersionGUID"
+            };
+
+            foreach (string attrName in execAttributes)
+            {
+                string xpath = $"/DTS:Executable/@DTS:{attrName}";
+                XmlNode attrNode = execNode.SelectSingleNode($"@DTS:{attrName}", nsmgr);
+                string value = attrNode?.Value;
+
+                table.Rows.Add(fileName, folderPath, lastModified, xpath, value);
+            }
+
+            // Odczyt węzłów potomnych DTS:PackageParameter
+            XmlNodeList paramNodes = xmlDoc.SelectNodes("/DTS:Executable/DTS:PackageParameters/DTS:PackageParameter", nsmgr);
+            if (paramNodes != null && paramNodes.Count > 0)
+            {
+                string[] paramAttributes = new string[]
+                {
+                    "CreationName",
+                    "DataType",
+                    "DTSID",
+                    "ObjectName"
+                };
+
+                int paramIndex = 1;
+                foreach (XmlNode paramNode in paramNodes)
+                {
+                    foreach (string attrName in paramAttributes)
+                    {
+                        string xpath = $"/DTS:Executable/DTS:PackageParameters/DTS:PackageParameter[{paramIndex}]/@DTS:{attrName}";
+                        XmlNode attrNode = paramNode.SelectSingleNode($"@DTS:{attrName}", nsmgr);
+                        string value = attrNode?.Value;
+
+                        table.Rows.Add(fileName, folderPath, lastModified, xpath, value);
+                    }
+                    paramIndex++;
+                }
+            }
+        }
+
+        private static void SaveToDatabase(DataTable table)
+        {
+            using (SqlConnection connection = new SqlConnection(ConnectionString))
+            {
+                connection.Open();
+                using (SqlBulkCopy bulkCopy = new SqlBulkCopy(connection))
+                {
+                    bulkCopy.DestinationTableName = "dbo.ssis_xpath";
+                    bulkCopy.ColumnMappings.Add("nazwa_pliku", "nazwa_pliku");
+                    bulkCopy.ColumnMappings.Add("sciezka_folderu_pliku", "sciezka_folderu_pliku");
+                    bulkCopy.ColumnMappings.Add("data_modyfikacji_pliku", "data_modyfikacji_pliku");
+                    bulkCopy.ColumnMappings.Add("sciezka_xpath", "sciezka_xpath");
+                    bulkCopy.ColumnMappings.Add("wartosc_xpath", "wartosc_xpath");
+
+                    bulkCopy.WriteToServer(table);
+                }
+            }
+        }
+    }
+}
