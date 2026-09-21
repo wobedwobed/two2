@@ -1,0 +1,13 @@
+// 1. Sprawdź i usuń atrybut "Tylko do odczytu" przed zapisem
+if (File.Exists(stareFilePath))
+{
+    FileAttributes attributes = File.GetAttributes(stareFilePath);
+    if ((attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+    {
+        // Usuwanie flagi ReadOnly z atrybutów pliku
+        File.SetAttributes(stareFilePath, attributes & ~FileAttributes.ReadOnly);
+    }
+}
+
+// 2. Teraz zapisz plik
+docStare.Save(stareFilePath);
