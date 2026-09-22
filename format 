@@ -1,0 +1,43 @@
+// Ustawienia formatowania XML zgodne z Visual Studio
+XmlWriterSettings xmlSettings = new XmlWriterSettings
+{
+    Indent = true,
+    IndentChars = "  ", // Dwie spacje to standardowy odstęp w VS
+    NewLineChars = "\r\n", // Znak nowej linii dla Windows
+    NewLineHandling = NewLineHandling.Replace,
+    OmitXmlDeclaration = false, // Wymusza pozostawienie <?xml version="1.0" ... ?>
+    Encoding = new System.Text.UTF8Encoding(true) // Zapis jako UTF-8 (wraz z BOM, jak robi to VS)
+};
+
+try
+{
+    using (var fs = new FileStream(stareFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
+    using (XmlWriter writer = XmlWriter.Create(fs, xmlSettings))
+    {
+        docStare.Save(writer);
+    }
+    Console.WriteLine($"Zaktualizowano plik: {para.Key}.dtsx");
+}
+
+
+
+try
+{
+    // Możesz użyć ponownie tych samych ustawień co przy .dtsx
+    XmlWriterSettings xmlSettingsProj = new XmlWriterSettings
+    {
+        Indent = true,
+        IndentChars = "  ", 
+        NewLineChars = "\r\n",
+        NewLineHandling = NewLineHandling.Replace,
+        OmitXmlDeclaration = false,
+        Encoding = new System.Text.UTF8Encoding(true)
+    };
+
+    using (var fs = new FileStream(dtprojFile, FileMode.Create, FileAccess.Write, FileShare.None))
+    using (XmlWriter writer = XmlWriter.Create(fs, xmlSettingsProj))
+    {
+        dtprojXml.Save(writer);
+    }
+    Console.WriteLine($"\nZaktualizowano projekt: {Path.GetFileName(dtprojFile)}");
+}
