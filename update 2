@@ -1,0 +1,183 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Xml.Linq;
+
+namespace SSISUpdateApp
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            // Zmień na właściwą ścieżkę do folderu z plikami projektu
+            string folderPath = @"C:\TwojFolderZProjektemSSIS"; 
+            
+            if (!Directory.Exists(folderPath))
+            {
+                Console.WriteLine("Podany folder nie istnieje!");
+                return;
+            }
+
+            // KROK 1: Definicja sufixu i jego długości
+            string sufix = "_v2"; // Wpisz swój sufix
+            int sufixDlugosc = sufix.Length;
+
+            // KROK 2: Definicja prefixu i jego długości
+            string prefix = "PKG_"; // Wpisz swój prefix
+            int prefixDlugosc = prefix.Length;
+
+            // KROK 3: Znalezienie wszystkich plików .dtsx w podanym folderze
+            var wszystkieDtsxFiles = Directory.GetFiles(folderPath, "*.dtsx");
+            List<string> wszystkieDtsx = wszystkieDtsxFiles
+                .Select(f => Path.GetFileNameWithoutExtension(f))
+                .ToList();
+
+            // KROK 4: Odczytanie pliku .dtproj i pobranie z węzła <SSIS:Packages>
+            string dtprojFile = Directory.GetFiles(folderPath, "*.dtproj").FirstOrDefault();
+            if (string.IsNullOrEmpty(dtprojFile))
+            {
+                Console.WriteLine("Nie znaleziono pliku .dtproj!");
+                return;
+            }
+
+            XDocument dtprojXml;
+            // Bezpieczny odczyt pliku
+            using (var fs = new FileStream(dtprojFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                dtprojXml = XDocument.Load(fs);
+            }
+
+            List<string> wProjekcieDtsx = dtprojXml.Descendants()
+                .Where(e => e.Name.LocalName == "Package") // <SSIS:Package> jest elementem wewnątrz <SSIS:Packages>
+                .Select(e => e.Attributes().FirstOrDefault(a => a.Name.LocalName == "Name")?.Value)
+                .Where(val => val != null && val.EndsWith(".dtsx", StringComparison.OrdinalIgnoreCase))
+                .Select(val => val.Substring(0, val.Length - 5))
+                .ToList();
+
+            // KROK 5: Filtrowanie 'wszystkieDtsx' za pomocą 'wProjekcieDtsx'
+            List<string> wProjekciePrzefiltrowaneDtsx = wszystkieDtsx
+                .Intersect(wProjekcieDtsx, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            // KROK 6: Wyszukiwanie "Starych" (bez sufixu na końcu, z prefixem na początku)
+            List<string> wProjekciePrzefiltrowaneDtsxStare = wProjekciePrzefiltrowaneDtsx
+                .Where(n => n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && 
+                           !n.EndsWith(sufix, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            // KROK 7: Wyszukiwanie "Nowych" (z sufixem na końcu, z prefixem na początku)
+            List<string> wProjekciePrzefiltrowaneDtsxNowe = wProjekciePrzefiltrowaneDtsx
+                .Where(n => n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && 
+                            n.EndsWith(sufix, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            // KROK 8 & 9: Dopasowanie w pary oraz filtracja (brak odpowiednika = brak w słowniku)
+            Dictionary<string, string> paryStareNowe = new Dictionary<string, string>();
+            foreach (var stare in wProjekciePrzefiltrowaneDtsxStare)
+            {
+                string poszukiwaneNowe = stare + sufix;
+                var znalezioneNowe = wProjekciePrzefiltrowaneDtsxNowe.FirstOrDefault(n => n.Equals(poszukiwaneNowe, StringComparison.OrdinalIgnoreCase));
+                
+                if (znalezioneNowe != null)
+                {
+                    paryStareNowe.Add(stare, znalezioneNowe);
+                }
+            }
+
+            // KROK 10, 11, 12, 13: Operacje na węzłach <DTS:Executable>
+            foreach (var para in paryStareNowe)
+            {
+                string stareFilePath = Path.Combine(folderPath, para.Key + ".dtsx");
+                string noweFilePath = Path.Combine(folderPath, para.Value + ".dtsx");
+
+                XDocument docStare, docNowe;
+                
+                // Bezpieczne wczytanie plików
+                using (var fs = new FileStream(stareFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    docStare = XDocument.Load(fs);
+                }
+                using (var fs = new FileStream(noweFilePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+                {
+                    docNowe = XDocument.Load(fs);
+                }
+
+                XElement rootStare = docStare.Elements().FirstOrDefault(e => e.Name.LocalName == "Executable");
+                XElement rootNowe = docNowe.Elements().FirstOrDefault(e => e.Name.LocalName == "Executable");
+
+                if (rootStare != null && rootNowe != null)
+                {
+                    // Ze STAREGO: usuwamy wszystko OPRÓCZ PackageParameters oraz Property
+                    var wezlyDoUsunieciaStare = rootStare.Elements()
+                        .Where(e => e.Name.LocalName != "PackageParameters" && e.Name.LocalName != "Property")
+                        .ToList();
+
+                    foreach (var wezel in wezlyDoUsunieciaStare)
+                    {
+                        wezel.Remove();
+                    }
+
+                    // Z NOWEGO: kopiujemy wszystko OPRÓCZ PackageParameters oraz Property
+                    var wezlyDoSkopiowaniaNowe = rootNowe.Elements()
+                        .Where(e => e.Name.LocalName != "PackageParameters" && e.Name.LocalName != "Property")
+                        .ToList();
+
+                    // Wklejenie do STAREGO w miejsce usuniętych
+                    foreach (var wezel in wezlyDoSkopiowaniaNowe)
+                    {
+                        rootStare.Add(new XElement(wezel)); // deep copy (kopiowanie zawartości)
+                    }
+
+                    // Zapis pod dotychczasową nazwą (blokada pliku przed złośliwymi procesami w tle)
+                    try
+                    {
+                        using (var fs = new FileStream(stareFilePath, FileMode.Create, FileAccess.Write, FileShare.None))
+                        {
+                            docStare.Save(fs);
+                        }
+                        Console.WriteLine($"Zaktualizowano plik: {para.Key}.dtsx");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Błąd podczas zapisu {stareFilePath}: {ex.Message}");
+                    }
+                }
+            }
+
+            // KROK 14: Otwórz plik z rozszerzeniem .dtproj i skasuj wpisy...
+            string pelnySufixDtsx = sufix + ".dtsx";
+            var dtprojWezlyDoUsuniecia = dtprojXml.Descendants()
+                .Where(e => e.Name.LocalName == "Package" || e.Name.LocalName == "PackageMetaData")
+                .Where(e => 
+                {
+                    // Szukamy atrybutu 'Name', który kończy się sufixem
+                    var nameAttr = e.Attributes().FirstOrDefault(a => a.Name.LocalName == "Name");
+                    return nameAttr != null && nameAttr.Value.EndsWith(pelnySufixDtsx, StringComparison.OrdinalIgnoreCase);
+                })
+                .ToList();
+
+            foreach (var wezel in dtprojWezlyDoUsuniecia)
+            {
+                wezel.Remove();
+            }
+
+            // Zapis pliku dtproj
+            try
+            {
+                using (var fs = new FileStream(dtprojFile, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    dtprojXml.Save(fs);
+                }
+                Console.WriteLine($"\nZaktualizowano projekt: {Path.GetFileName(dtprojFile)}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Błąd podczas zapisu {dtprojFile}: {ex.Message}");
+            }
+
+            Console.WriteLine("\nProces zakończony. Naciśnij dowolny klawisz, aby wyjść.");
+            Console.ReadKey();
+        }
+    }
+}
