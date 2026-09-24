@@ -1,0 +1,209 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Web.Script.Serialization;
+using System.Xml.Linq;
+
+namespace DtsxModifier
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            if (args.Length < 2)
+            {
+                Console.WriteLine("Nieprawidłowa liczba argumentów.");
+                Console.WriteLine("Użycie: DtsxModifier.exe <sciezka_do_folderu> <test|prod>");
+                return;
+            }
+
+            string rootFolder = args[0];
+            string mode = args[1].ToLower();
+
+            if (!Directory.Exists(rootFolder))
+            {
+                Console.WriteLine($"Podany folder nie istnieje: {rootFolder}");
+                return;
+            }
+
+            if (mode != "test" && mode != "prod")
+            {
+                Console.WriteLine("Nieznany tryb. Dopuszczalne tryby to 'test' lub 'prod'.");
+                return;
+            }
+
+            Console.WriteLine($"Rozpoczynam działanie w trybie: {mode.ToUpper()}");
+            Console.WriteLine($"Przeszukiwany folder: {rootFolder}");
+
+            // Pobieranie wszystkich plików .dtsx w podanym folderze i podfolderach
+            var allFiles = Directory.GetFiles(rootFolder, "*.dtsx", SearchOption.AllDirectories);
+
+            // Filtrowanie - pomijamy foldery 'bin' i 'obj'
+            var filteredFiles = allFiles.Where(f => 
+                f.IndexOf(@"\bin\", StringComparison.OrdinalIgnoreCase) < 0 && 
+                f.IndexOf(@"\obj\", StringComparison.OrdinalIgnoreCase) < 0).ToList();
+
+            Console.WriteLine($"Znaleziono {filteredFiles.Count} plików DTSX do przetworzenia (pominięto bin/obj).\n");
+
+            var resultsList = new List<Dictionary<string, object>>();
+            XNamespace dts = "www.microsoft.com/SqlServer/Dts";
+            string targetObjectName = "SQL_inicjacja_dbo_PrzeplywDanych";
+
+            foreach (var filePath in filteredFiles)
+            {
+                string relativePath = filePath.Substring(rootFolder.Length).TrimStart('\\');
+                string fileName = Path.GetFileName(filePath);
+                DateTime modDate = File.GetLastWriteTime(filePath);
+                
+                bool czyZnaleziony = false;
+                bool czyUsunieto = false;
+
+                try
+                {
+                    // Wczytanie pliku jako XML
+                    XDocument doc = XDocument.Load(filePath);
+
+                    // Szukanie węzła <DTS:Executable> o konkretnej nazwie
+                    var targetNodes = doc.Descendants(dts + "Executable")
+                        .Where(e => (string)e.Attribute(dts + "ObjectName") == targetObjectName)
+                        .ToList();
+
+                    czyZnaleziony = targetNodes.Any();
+
+                    if (mode == "prod" && czyZnaleziony)
+                    {
+                        // Znajdowanie zależności (PrecedenceConstraints), które prowadzą do lub z tego węzła
+                        var precedenceConstraints = doc.Descendants(dts + "PrecedenceConstraint")
+                            .Where(c => {
+                                string fromAttr = (string)c.Attribute(dts + "From");
+                                string toAttr = (string)c.Attribute(dts + "To");
+
+                                // Atrybuty From/To w SSIS często mają format "Package\WęzełRodzic\NazwaWęzła"
+                                bool fromMatches = fromAttr != null && (fromAttr == targetObjectName || fromAttr.EndsWith(@"\" + targetObjectName));
+                                bool toMatches = toAttr != null && (toAttr == targetObjectName || toAttr.EndsWith(@"\" + targetObjectName));
+
+                                return fromMatches || toMatches;
+                            }).ToList();
+
+                        // Usuwanie zależności
+                        foreach (var constraint in precedenceConstraints)
+                        {
+                            constraint.Remove();
+                        }
+
+                        // Usuwanie samego węzła
+                        foreach (var node in targetNodes)
+                        {
+                            node.Remove();
+                        }
+
+                        // Zapisanie zmodyfikowanego pliku XML
+                        doc.Save(filePath);
+                        czyUsunieto = true;
+                        
+                        Console.WriteLine($"[USUNIĘTO] {relativePath}");
+                    }
+                    else if (czyZnaleziony)
+                    {
+                        Console.WriteLine($"[ZNALEZIONO] {relativePath}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[BŁĄD] Nie można przetworzyć pliku {relativePath}: {ex.Message}");
+                }
+
+                // Tworzenie dynamicznego obiektu wynikowego, aby pominąć propercję w trybie "test"
+                var resultItem = new Dictionary<string, object>
+                {
+                    { "NazwaPliku", fileName },
+                    { "SciezkaWzgledna", relativePath },
+                    { "DataModyfikacji", modDate.ToString("yyyy-MM-dd HH:mm:ss") },
+                    { "czy_znaleziony_string", czyZnaleziony }
+                };
+
+                // Dodanie pola czy_usunieto_string tylko w trybie prod
+                if (mode == "prod")
+                {
+                    resultItem.Add("czy_usunieto_string", czyUsunieto);
+                }
+
+                resultsList.Add(resultItem);
+            }
+
+            // Generowanie pliku JSON
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            // Zwiększamy limit na wypadek ogromnej ilości plików
+            serializer.MaxJsonLength = int.MaxValue; 
+            string jsonOutput = serializer.Serialize(resultsList);
+
+            // Zapis w folderze, z którego uruchomiono aplikację
+            string currentDir = Environment.CurrentDirectory;
+            string outputJsonPath = Path.Combine(currentDir, $"wynik_{mode}_{DateTime.Now:yyyyMMdd_HHmmss}.json");
+
+            File.WriteAllText(outputJsonPath, FormatJson(jsonOutput));
+
+            Console.WriteLine($"\nZakończono! Zapisano wyniki do pliku:\n{outputJsonPath}");
+        }
+
+        /// <summary>
+        /// Prosta metoda do sformatowania (Pretty Print) surowego stringa JSON.
+        /// </summary>
+        static string FormatJson(string json)
+        {
+            const string indentString = "  ";
+            int indent = 0;
+            bool quoted = false;
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < json.Length; i++)
+            {
+                var ch = json[i];
+                switch (ch)
+                {
+                    case '{':
+                    case '[':
+                        sb.Append(ch);
+                        if (!quoted)
+                        {
+                            sb.AppendLine();
+                            Enumerable.Range(0, ++indent).ToList().ForEach(item => sb.Append(indentString));
+                        }
+                        break;
+                    case '}':
+                    case ']':
+                        if (!quoted)
+                        {
+                            sb.AppendLine();
+                            Enumerable.Range(0, --indent).ToList().ForEach(item => sb.Append(indentString));
+                        }
+                        sb.Append(ch);
+                        break;
+                    case '"':
+                        sb.Append(ch);
+                        bool escaped = false;
+                        var index = i;
+                        while (index > 0 && json[--index] == '\\') escaped = !escaped;
+                        if (!escaped) quoted = !quoted;
+                        break;
+                    case ',':
+                        sb.Append(ch);
+                        if (!quoted)
+                        {
+                            sb.AppendLine();
+                            Enumerable.Range(0, indent).ToList().ForEach(item => sb.Append(indentString));
+                        }
+                        break;
+                    case ':':
+                        sb.Append(ch);
+                        if (!quoted) sb.Append(" ");
+                        break;
+                    default:
+                        sb.Append(ch);
+                        break;
+                }
+            }
+            return sb.ToString();
+        }
+    }
+}
