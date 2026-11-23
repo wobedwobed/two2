@@ -1,0 +1,444 @@
+
+Pytanie nr 1
+ 
+Czy jest Pan/Pani w stanie zoptymalizować zapytanie pod kątem czytelności i wydajności?
+Parametr @Typ_Okresu_Sprzedazy posiada przypisaną wartość 2, ale zapytanie powinno się wykonać dla dowolnej liczby całkowitej jako wartość parametru bez komunikatu błędu.
+DECLARE @Typ_Okresu_Sprzedazy int = 2
+ 
+SELECT Distinct Okres_Sprzedazy,
+   	ROK,
+   	MSC
+FROM
+(
+    SELECT Okres_Sprzedazy,
+       	ROK,
+       	MSC
+    FROM
+    (
+        SELECT DISTINCT
+               CAST(YEAR(Data_Ksiegowania) AS VARCHAR(4)) + +'-' + CAST(CASE MONTH(Data_Ksiegowania)
+    WHEN 1 THEN  'Styczeń'
+    WHEN 2 THEN  'Luty'
+    WHEN 3 THEN  'Marzec'
+    WHEN 4 THEN  'Kwiecień'
+    WHEN 5 THEN  'Maj'
+    WHEN 6 THEN  'Czerwiec'
+    WHEN 7 THEN  'Lipiec'
+    WHEN 8 THEN  'Sierpień'
+    WHEN 9 THEN  'Wrzesień'
+    WHEN 10 THEN 'Październik'
+    WHEN 11 THEN 'Listopad'
+    WHEN 12 THEN 'Grudzień'
+    END AS VARCHAR(20)) AS Okres_Sprzedazy,
+               YEAR(Data_Ksiegowania) AS ROK,
+               MONTH(Data_Ksiegowania) AS MSC
+        FROM SprzedazPozycjiFaktur_Dane_Vv AS FAN
+        WHERE (@Typ_Okresu_Sprzedazy = 1)
+    ) AS TB
+    UNION ALL
+    SELECT Okres_Sprzedazy,
+       	ROK,
+       	MSC
+    FROM
+    (
+        SELECT DISTINCT
+               CAST(YEAR(Data_Sprzedazy) AS VARCHAR(4)) + +'-' + CAST(CASE MONTH(Data_Sprzedazy)
+    WHEN 1 THEN  'Styczeń'
+    WHEN 2 THEN  'Luty'
+    WHEN 3 THEN  'Marzec'
+    WHEN 4 THEN  'Kwiecień'
+    WHEN 5 THEN  'Maj'
+    WHEN 6 THEN  'Czerwiec'
+    WHEN 7 THEN  'Lipiec'
+    WHEN 8 THEN  'Sierpień'
+    WHEN 9 THEN  'Wrzesień'
+    WHEN 10 THEN 'Październik'
+    WHEN 11 THEN 'Listopad'
+    WHEN 12 THEN 'Grudzień'
+    END AS VARCHAR(20)) AS Okres_Sprzedazy,
+               YEAR(Data_Sprzedazy) AS ROK,
+               MONTH(Data_Sprzedazy) AS MSC
+        FROM SprzedazPozycjiFaktur_Dane_Vv AS FAN
+        WHERE (@Typ_Okresu_Sprzedazy = 2)
+    ) AS TB
+    UNION ALL
+    SELECT Okres_Sprzedazy,
+       	ROK,
+       	MSC
+    FROM
+    (
+        SELECT DISTINCT
+               CAST(YEAR(Data_Wystawienia) AS VARCHAR(4)) + +'-' + CAST(CASE MONTH(Data_Wystawienia)
+    WHEN 1 THEN  'Styczeń'
+    WHEN 2 THEN  'Luty'
+    WHEN 3 THEN  'Marzec'
+    WHEN 4 THEN  'Kwiecień'
+    WHEN 5 THEN  'Maj'
+    WHEN 6 THEN  'Czerwiec'
+    WHEN 7 THEN  'Lipiec'
+    WHEN 8 THEN  'Sierpień'
+    WHEN 9 THEN  'Wrzesień'
+    WHEN 10 THEN 'Październik'
+    WHEN 11 THEN 'Listopad'
+    WHEN 12 THEN 'Grudzień'
+    END AS VARCHAR(20)) AS Okres_Sprzedazy,
+               YEAR(Data_Wystawienia) AS ROK,
+               MONTH(Data_Wystawienia) AS MSC
+        FROM SprzedazPozycjiFaktur_Dane_Vv AS FAN
+        WHERE (@Typ_Okresu_Sprzedazy = 3)
+    ) AS TB
+) TBX
+ORDER BY ROK DESC,
+         MSC DESC                       
+ 
+
+Odpowiedź:
+Dla sprawdzenia poprawności mojego query i oszacowania benchmarków dla jego wykonania wygenerowałem sobie tabelę z 1 mln wiersz typu cheap czyli bez indeksów. Do testów używałem mojego starego ośmioletniego laptopa z procesorem i5, Windows 10, 16GB RAM, dysk SSD.
+Kod do generowania tabeli i moje query poniżej.
+Zysk: Wykonanie Państwa kodu na mojej tabeli w kilku próbach zajmuje średnio ok. 25 sekund. Wykonanie kodu po moim refaktoringu zajmuje średnio 6-7 sekund. 
+
+DECLARE @UpperBound INT = 1000000;
+DROP TABLE IF EXISTS ##Numbers
+;WITH cteN(Number) AS
+(
+  SELECT ROW_NUMBER() OVER (ORDER BY s1.[object_id])
+  FROM sys.all_columns AS s1
+  CROSS JOIN sys.all_columns AS s2
+)
+SELECT [Number] INTO ##Numbers
+FROM cteN WHERE [Number] <= @UpperBound;
+
+DROP TABLE IF EXISTS ##SalesOrder
+CREATE TABLE ##SalesOrder (Data_Ksiegowania date, Data_Sprzedazy date, Data_Wystawienia date, SalesAmount decimal(10,2));
+
+DECLARE @StartDate AS date;
+DECLARE @EndDate AS date;
+DECLARE @DaysBetween AS int;
+DECLARE @Count int;
+
+SELECT @StartDate   = '01/01/2019',
+       @EndDate     = '12/31/2021',
+       @DaysBetween = (1+DATEDIFF(DAY, @StartDate, @EndDate)),
+       @Count = 0;
+
+WHILE (@Count < 10000000)
+BEGIN
+    
+    ;WITH CTE AS (
+	SELECT 
+			DATEADD(DAY, RAND(CHECKSUM(NEWID()))*@DaysBetween,@StartDate) AS [Data_Sprzedazy]
+			,ABS(CHECKSUM(NEWID()) % 50) + 10 AS [SalesAmount]
+    FROM ##Numbers
+	)
+	INSERT INTO ##SalesOrder (Data_Sprzedazy,Data_Wystawienia, Data_Ksiegowania, SalesAmount)
+	SELECT
+			[Data_Sprzedazy]
+			,DATEADD(DAY, 10,[Data_Sprzedazy]) AS 'Data_Wystawienia'
+			,DATEADD(DAY, 20,[Data_Sprzedazy]) AS 'Data_Ksiegowania'
+			,[SalesAmount]
+	FROM CTE
+   SET @Count = @Count + @@ROWCOUNT;
+END
+
+--= QUERY ===================================================
+DECLARE @Typ_Okresu_Sprzedazy int = 1
+SELECT
+	CAST(ROK AS VARCHAR(4))	
+		+ '-' 
+		+ CAST(
+			CASE MSC WHEN 1 THEN 'Styczeń' WHEN 2 THEN 'Luty' WHEN 3 THEN 'Marzec' WHEN 4 THEN 'Kwiecień' WHEN 5 THEN 'Maj' WHEN 6 THEN 'Czerwiec' WHEN 7 THEN 'Lipiec' WHEN 8 THEN 'Sierpień' WHEN 9 THEN 'Wrzesień' WHEN 10 THEN 'Październik' WHEN 11 THEN 'Listopad' WHEN 12 THEN 'Grudzień' 
+			END AS VARCHAR(20)
+		) AS Okres_Sprzedazy
+	,ROK
+	,MSC
+FROM
+    (SELECT 
+        DISTINCT 
+		YEAR(Data_Ksiegowania) AS ROK
+		,MONTH(Data_Ksiegowania) AS MSC 
+    FROM 
+        ##SalesOrder AS FAN1 
+    WHERE 
+        (@Typ_Okresu_Sprzedazy = 1)
+	UNION --------------------------------
+	SELECT 
+        DISTINCT 
+		YEAR(Data_Sprzedazy) AS ROK
+		,MONTH(Data_Sprzedazy) AS MSC 
+    FROM 
+        ##SalesOrder AS FAN2 
+    WHERE 
+        (@Typ_Okresu_Sprzedazy = 2)
+	UNION --------------------------------
+	SELECT 
+        DISTINCT 
+		YEAR(Data_Wystawienia) AS ROK
+		,MONTH(Data_Wystawienia) AS MSC 
+    FROM 
+        ##SalesOrder AS FAN3 
+    WHERE 
+        (@Typ_Okresu_Sprzedazy = 3)
+	) t
+ORDER BY ROK DESC, MSC DESC
+
+Pytanie nr 2
+ 
+Załóżmy, że przy pomocy usługi SSIS konieczne jest pozyskanie do bazy danych hurtowni tabeli z systemu źródłowego raz na dobę, proszę o podanie kroków jakie wykona pakiet jaki Pan/Pani stworzy w celu realizacji zadania.
+Tabela jest znaczących rozmiarów i zależy nam na możliwie najmniejszych konsekwencjach, gdyby zasilenie zakończyło się niepowodzeniem np. z powodu zerwania połączenia.
+Odpowiedź:
+Jeśli dane w tabeli na to pozwalają to zastosowałbym ładowanie całej tabeli (lub wierszy z nowego okresu/przyrostu, jeśli mamy pewność, że się nie zmieniły lub wierszy z datą modyfikacji w nowym okresie/przyroście) do tabeli stagingowej. Jeśli tabela nie jest duża a zależy nam na szybkim przepływie danych to w celu minimalizacji czasu wykonywania zapytania po stronie serwera źródłowego ściągamy całą tabelę bez warunków.
+W kolejnym kroku wykonujemy MERGE tych danych do tabeli docelowej.
+Jeśli tabela jest bardzo duża i zależy nam na możliwie najmniejszych konsekwencjach, gdyby zasilenie zakończyło się niepowodzeniem to możemy rozważyć ładowanie grup wierszy partiami w pętli.
+Oto kroki:
+ 
+
+Jakiego sterownika do bazy danych Oracle najchętniej by Pan/Pani użyła do tego celu, gdyby źródło danych znajdowało się właśnie na bazie danych Oracle, a hurtownia danych na MS SQL Server 2017?
+Odpowiedź:
+Myślę, że w przypadku MS SQL Server 2017 użyłbym tego sterownika
+https://www.oracle.com/database/technologies/appdev/ocmt.html
+albo tego sterownika
+https://www.microsoft.com/en-gb/download/details.aspx?id=29284
+ 
+Tego sterownika nie można użyć ponieważ działa od Sql Server 2019:
+https://learn.microsoft.com/en-us/sql/integration-services/data-flow/oracle-connector?view=sql-server-ver16
+
+Pytanie nr 3
+ 
+Jakie kroki by Pan/Pani podjęła, gdyby okazało się, że zapytanie TSQL, wykonuje się w nieakceptowalnym czasie?
+ 
+DELETE T1 FROM DSCustTransIdRefStaging AS T1
+JOIN DSCustTransIdRefStaging AS T2
+            	ON T1.[PARTITION] = T2.[PARTITION]
+                           	AND T1.TRANSRECID = T2.TRANSRECID
+                           	AND T1.DATAAREAID = 'KSS'
+                           	AND T1.EXECUTIONID != N'Export across company: KSS - 04.07.2024 14:54:27.-9E7C72D662D543E7A26775D94520A568'
+                           	AND T2.EXECUTIONID = N'Export across company: KSS - 04.07.2024 14:54:27.-9E7C72D662D543E7A26775D94520A568'
+                              
+Załóżmy, że poniższe indeksy istnieją.
+CREATE NONCLUSTERED INDEX [I_DATAAREAID] ON [dbo].[DSCustTransIdRefStaging]
+(
+            	[PARTITION] ASC,
+            	[DATAAREAID] ASC
+)WITH (PAD_INDEX = ON, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, DROP_EXISTING = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 70, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+ 
+ALTER TABLE [dbo].[DSCustTransIdRefStaging] ADD  CONSTRAINT [PK_DSCustTransIdRefStaging] PRIMARY KEY CLUSTERED
+(
+            	[EXECUTIONID] ASC,
+            	[TRANSRECID] ASC,
+            	[DATAAREAID] ASC,
+            	[PARTITION] ASC
+)WITH (PAD_INDEX = ON, STATISTICS_NORECOMPUTE = OFF, SORT_IN_TEMPDB = OFF, IGNORE_DUP_KEY = OFF, ONLINE = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 70, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+GO
+
+Odpowiedź:
+To jest ciekawe zagadnienie. Rozumiem, że przykład z życia  Niestety nie mam czasu aby wykonać sobie symulację na ten temat aby dać odpowiedź opartą na faktach. Co bym zrobił w takiej sytuacji? Sprawdził bym plan wykonania zapytania a niezależnie od tego wykonałbym sobie kilka testów na żywych danych aby znaleźć optymalne podejście. Generalnie wydaje mi się, że indeksy są OK, nie wiem czy nieklastrowany indeks nr 1 jest tu w ogóle używany. 
+Pomysły:
+1)	Sprawdzić fragmentację indeksu 2 i jeśli jest duża to naprawić; sprawdzić rezultat
+2)	Refaktoryzacja kodu: Wyprodukować tabelę tymczasową zawierającą identyfikatory wierszy do skasowania, w drugim kroku: kasowanie wierszy z tabeli z inner joinem z tabelą tymczasową po kluczy identyfikatorów wierszy. Można też wykonać kasowanie w pętli
+3)	Można rozważyć czy mniej kosztowne nie było by skasowanie całej partycji a następnie zainsertowanie ponowne wyłącznie prawidłowych wierszy (query było by wykonane na mniejszej tabeli stagingowej)
+ 
+Czy gdy odkryje Pan/Pani iż problem stanowi limit na ilość operacji wejścia wyjścia (IOPS), jakie działania Pani/Pani zastosuje?
+Odpowiedź:
+Jeśli sytuacja no pozwala usunąłbym limit lub zmieniłbym ten limit dla RESOURCE POOL na wyższy.
+                              
+Pytanie nr 4
+                              
+Załóżmy posiadanie w bazie danych tabeli Pracownicy (IdPracownika bigint not null primary key, [Nazwisko i imię pracownika] nvarchar(200) not null, [Data Od] date not null, [Data Do] date null, IdPrzełożonego bigint not null).
+Gdy pracownik nie ma przełożonego IdPrzełożonego = IdPracownika. Dla uproszczenia nazwisko od imienia oddziela spacja, imię występuje po nazwisku i nie ma przypadku, aby różne osoby posiadały to samo imię i nazwisko.
+Czy jest Pan/Pani w stanie zaproponować zapytanie, którego efektem będzie lista
+[Nazwisko i imię pracownika], [Data Od], [Data Do], [Nazwisko i imię przełożonego]
+dla wszystkich przełożonych o imieniu „Zdzisław”?
+Odpowiedź:
+DECLARE @current_date DATETIME = GETDATE()
+SELECT  
+		emp.employee_name AS [Nazwisko i imię pracownika]
+		,emp.date_from AS [Data Od]
+		,emp.date_to AS [Data Do] 
+		,manager.employee_name AS [Nazwisko i imię przełożonego]
+FROM #emp AS manager
+LEFT JOIN #emp AS emp ON manager.employee_id = emp.manager_id
+WHERE 
+	manager.employee_name LIKE '% Zdzisław'
+	AND manager.date_from <= @current_date AND manager.date_to > @current_date
+	AND emp.date_from <= @current_date AND emp.date_to > @current_date
+
+
+Dodatkowo, jeśli przerwa w przypisaniu przypada na sobotę i/lub niedzielę czy potrafi Pan/Pani zaproponować zapytanie scalające wiersze tak modyfikując wartości w kolumnach [Data Od] i [Data Do] aby przerwa w przypisaniu w sobotę i/lub niedzielę była zignorowana, a zestawienie prezentowało ciągłość przydziału do przełożonego?
+Odpowiedź: oto kod z dowodem plus dane do prześledzenia rozwiązania:
+DROP TABLE IF EXISTS #tmp;
+SELECT 1 AS Id, 
+       'Mat' AS emp, 
+	   'Michal' AS boss,
+       CONVERT(DATE, '2000-01-01', 120) AS dt_from, 
+       CONVERT(DATE, '2024-12-03', 120) AS dt_to
+INTO #tmp
+UNION ALL
+SELECT 2 AS Id, 
+        'Mat' AS emp, 
+	   'Michal' AS boss,
+       CONVERT(DATE, '2024-12-03', 120) AS dt_from, 
+       CONVERT(DATE, '2024-12-07', 120) AS dt_to
+UNION ALL
+SELECT 3 AS Id, 
+       'Mat' AS emp, 
+	   'Michal' AS boss,
+       CONVERT(DATE, '2024-12-09', 120) AS dt_from, 
+       CONVERT(DATE, '2100-01-01', 120) AS dt_to
+---------------------------------------------------------
+UNION ALL
+SELECT 4 AS Id, 
+        'Pat' AS emp, 
+	   'Michal' AS boss,
+       CONVERT(DATE, '2000-01-01', 120) AS dt_from, 
+       CONVERT(DATE, '2024-12-02', 120) AS dt_to
+UNION ALL
+SELECT 5 AS Id, 
+       'Pat' AS emp, 
+	   'Michal' AS boss,
+       CONVERT(DATE, '2024-12-03', 120) AS dt_from, 
+       CONVERT(DATE, '2024-12-07', 120) AS dt_to
+UNION ALL
+SELECT 6 AS Id, 
+       'Pat' AS emp, 
+	   'Michal' AS boss,
+       CONVERT(DATE, '2024-12-09', 120) AS dt_from, 
+       CONVERT(DATE, '2100-01-01', 120) AS dt_to
+
+
+SELECT *
+FROM #tmp
+ORDER BY 1;
+
+DECLARE @rows_to_delete TABLE (Id INT)
+
+
+UPDATE a
+SET a.dt_from = b.dt_from
+	OUTPUT b.Id -- output clause
+	INTO @rows_to_delete (Id)
+FROM #tmp a
+LEFT JOIN #tmp b 
+		ON a.emp = b.emp
+		AND a.boss = b.boss
+        AND DATEDIFF(day, a.dt_from, b.dt_to) >= -2
+        AND DATEDIFF(day, a.dt_from, b.dt_to) < 0
+WHERE DATENAME(weekday, a.dt_from) = 'Monday'
+
+
+SELECT * FROM @rows_to_delete
+
+SELECT * FROM #tmp
+
+DELETE t
+FROM #tmp t
+INNER JOIN @rows_to_delete d ON d.Id=t.Id
+
+SELECT * FROM #tmp
+
+
+ 
+Pytanie nr 5
+Jaki efekt osiągamy dzięki poniższemu zapytaniu?
+ 
+INSERT INTO dbo.DIM_TETA_USERS_SCD ([TETA_USER_ID], [UZYTKOWNIK], [PRAC_ID], [NAZWA_UZYTKOWNIKA_BD], [OSBY_ID], [USER_KIND],
+                           [HAS_ACCESS_TO_TC], [HAS_ACCESS_TO_TG], [DOMAIN_USER_NAME], [DOMAIN_USER_SID], [USER_UNDER_LICENCE_TC_TN],
+                           [USER_UNDER_LICENCE_TG_TN], [START_DATE], [END_DATE])
+Select MERGE_OUT.[TETA_USER_ID], MERGE_OUT.[UZYTKOWNIK], MERGE_OUT.[PRAC_ID], MERGE_OUT.[NAZWA_UZYTKOWNIKA_BD], MERGE_OUT.[OSBY_ID], MERGE_OUT.[USER_KIND],
+                    MERGE_OUT.[HAS_ACCESS_TO_TC], MERGE_OUT.[HAS_ACCESS_TO_TG], MERGE_OUT.[DOMAIN_USER_NAME], MERGE_OUT.[DOMAIN_USER_SID], MERGE_OUT.USER_UNDER_LICENCE_TC_TN,
+                    MERGE_OUT.USER_UNDER_LICENCE_TG_TN, MERGE_OUT.[START_DATE], MERGE_OUT.[END_DATE]
+FROM
+(
+MERGE dbo.DIM_TETA_USERS_SCD AS target
+USING (
+       Select TU.ID as TETA_USER_ID, TU.UZYTKOWNIK, TU.PRAC_ID, TU.NAZWA_UZYTKOWNIKA_BD, TU.OSBY_ID, TU.USER_KIND, TU.HAS_ACCESS_TO_TC, TU.HAS_ACCESS_TO_TG,
+             TU.DOMAIN_USER_NAME, TU.DOMAIN_USER_SID, TU.USER_UNDER_LICENCE_TC_TN, TU.USER_UNDER_LICENCE_TG_TN, TU.SYSDATE from dbo.S_TETA_TETA_USERS TU
+)AS Source(TETA_USER_ID, UZYTKOWNIK, PRAC_ID, NAZWA_UZYTKOWNIKA_BD, OSBY_ID, USER_KIND, HAS_ACCESS_TO_TC, HAS_ACCESS_TO_TG, DOMAIN_USER_NAME, DOMAIN_USER_SID,
+                    USER_UNDER_LICENCE_TC_TN, USER_UNDER_LICENCE_TG_TN, SYSDATE)
+       ON (target.TETA_USER_ID = Source.TETA_USER_ID)
+       WHEN NOT MATCHED BY TARGET THEN
+             INSERT (TETA_USER_ID, UZYTKOWNIK, PRAC_ID, NAZWA_UZYTKOWNIKA_BD, OSBY_ID, USER_KIND, HAS_ACCESS_TO_TC,
+                                  HAS_ACCESS_TO_TG, DOMAIN_USER_NAME, DOMAIN_USER_SID, USER_UNDER_LICENCE_TC_TN, USER_UNDER_LICENCE_TG_TN,
+                                  [START_DATE], [END_DATE])
+             VALUES (source.TETA_USER_ID, source.UZYTKOWNIK, source.PRAC_ID, source.NAZWA_UZYTKOWNIKA_BD, source.OSBY_ID, source.USER_KIND, source.HAS_ACCESS_TO_TC,
+                                  source.HAS_ACCESS_TO_TG, source.DOMAIN_USER_NAME, source.DOMAIN_USER_SID, source.USER_UNDER_LICENCE_TC_TN, source.USER_UNDER_LICENCE_TG_TN,
+                                  Convert(date, source.SYSDATE), Convert(date, '9999-12-31', 120))
+       WHEN NOT MATCHED BY SOURCE AND target.[END_DATE] = Convert(date, '9999-12-31', 120)
+             THEN UPDATE SET target.[END_DATE] = DateAdd(dd, -1, Convert(date, GETDATE()))
+       WHEN MATCHED AND target.[END_DATE] = Convert(date, '9999-12-31', 120)
+                    AND (target.UZYTKOWNIK != source.UZYTKOWNIK
+                                        or ISNULL(target.PRAC_ID, -1) != ISNULL(source.PRAC_ID, -1)
+                                        or target.NAZWA_UZYTKOWNIKA_BD != source.NAZWA_UZYTKOWNIKA_BD
+                                        or ISNULL(target.OSBY_ID, -1) != ISNULL(source.OSBY_ID, -1)
+                                        or target.USER_KIND != source.USER_KIND
+                                        or target.HAS_ACCESS_TO_TC != source.HAS_ACCESS_TO_TC
+                                        or target.HAS_ACCESS_TO_TG != source.HAS_ACCESS_TO_TG
+                                        or ISNULL(target.DOMAIN_USER_NAME, '') != ISNULL(source.DOMAIN_USER_NAME, '')
+                                        or ISNULL(target.DOMAIN_USER_SID, '') != ISNULL(source.DOMAIN_USER_SID, '')
+                                        or ISNULL(target.USER_UNDER_LICENCE_TC_TN, '') != ISNULL(source.USER_UNDER_LICENCE_TC_TN, '')
+                                        or ISNULL(target.USER_UNDER_LICENCE_TG_TN, '') != ISNULL(source.USER_UNDER_LICENCE_TG_TN, '')
+                           )
+             THEN UPDATE SET target.[END_DATE] = DATEADD(DD, -1, CONVERT(Date, source.SYSDATE))
+       OUTPUT $Action Action_Out, source.[TETA_USER_ID], source.[UZYTKOWNIK], source.[PRAC_ID], source.NAZWA_UZYTKOWNIKA_BD, source.OSBY_ID, source.USER_KIND,
+                    source.HAS_ACCESS_TO_TC, source.HAS_ACCESS_TO_TG, source.DOMAIN_USER_NAME, source.DOMAIN_USER_SID, source.USER_UNDER_LICENCE_TC_TN,
+                    source.USER_UNDER_LICENCE_TG_TN, Convert(date, source.SYSDATE) as [START_DATE], Convert(date, '9999-12-31', 120) as [END_DATE]
+) AS MERGE_OUT
+where MERGE_OUT.Action_Out = 'UPDATE' AND [TETA_USER_ID] is not null;
+ 
+ 
+Delete from dbo.DIM_TETA_USERS_SCD where [START_DATE] > [END_DATE]
+
+Odpowiedź:
+Pierwsze polecenie, a więc MERGE z próbą zwrócenia output zwróci błąd z komunikatem „A nested INSERT, UPDATE, DELETE, or MERGE statement is not allowed in a SELECT statement that is not the immediate source of rows for an INSERT statement”, ponieważ klauzula OUTPUT została użyta w nieprawidłowy sposób. 
+
+Drugie polecenie “Delete from dbo.DIM_TETA_USERS_SCD where [START_DATE] > [END_DATE]”
+usunie wiersze z SCD gdzie data startu jest większa od daty końca obowiązywania wiersza. Ale tego typu sytuacja w SCD nie powinna się zdarzyć.
+
+Pytanie nr 6
+Gdy Pan/Pani widziała na raporcie kolumny:
+LM – Last Month (ostatni miesiąc)
+LY – Last Year (ostatni rok)
+YTD – Year To Date (suma od początku roku do dzisiejszej daty)
+ACT – Actual (dane rzeczywiście zarejstrowane, wykonanie, np. rzeczywista sprzedaż)
+BGT – Budget (dane budżetowe, planowe)
+PY – Prior Year (poprzedni rok)
+PM – Prior Month (poprzedni miesiąc)
+PP – Prior Period (poprzedni okres)
+LM Var – Last Month Variance (różnica między danym miesiącem a poprzednim miesiącem wyrażona liczbowo)
+LM Var % - Last Month Variance Percentage (różnica między danym miesiącem a poprzednim miesiącem wyrażona procentowo)
+PY Var - Prior Year Variance (różnica między bieżącym okresem i tym samym okresem poprzedniego roku wyrażona liczbowo)
+PY Var % - Prior Year Variance Percentage (różnica między bieżącym okresem i tym samym okresem poprzedniego roku wyrażona liczbowo)
+YTD PY - Year to Date Prior Year (miara YTD dla tego samego okresu w poprzednim roku)
+YTD PM - Year to Date Prior Month (miara YTD dla tego samego okresu w poprzednim miesiącu)
+YTD PP - Year to Date Prior Period (miara YTD dla tego samego okresu w poprzednim okresie raportowym)
+BGT Var - Budget Variance (odchylenie pomiędzy uzyskaną wartością a wartością zabudżetowaną wyrażone liczbowo)
+BGT % - Budget Variance Percentage (odchylenie pomiędzy uzyskaną wartością a wartością zabudżetowaną wyrażone procentowo)
+3-month moving average (3-month rolling average) – średnia krocząca trzymiesięczna – średnia z ostatnich trzech miesięcy
+ 
+Czy może Pan/Pani powiedzieć coś o wartościach jakie się w nich znajdują.
+Proszę uzupełnić tyle ile Pan/Pani potrafi.
+Odpowiedź: wyjaśnienia skrótów znajdują się obok nich
+ 
+Pytanie nr 7
+Proszę o krótkie opisanie możliwości/właściwości wymiaru typu Accounts w modelach wielowymiarowych SSAS.
+Odpowiedź:
+Wymiar typu Accounts to wymiar, którego atrybuty reprezentują plan kont księgowych do celów sprawozdawczości finansowej
+ 
+Pytanie nr 8
+Co sądzi Pan/Pani o prezentowaniu wyników i budżetu zawsze jako wartości dodatnie?
+Myślę, że przyjmę taki system jaki jest pożądany w organizacji 
+Ogólnie w RZiS prezentuje się wartości kosztowe jako wartości dodatnie.
+Tego bym się właśnie osobiście trzymał, jestem „za”. Nie jestem na bieżąco ze sprawozdawczością finansową, ale wydaje mi się, że to by było ok. Ale „klient nasz Pan”, jak już wcześniej wspominałem, programista się dostosuje 
+
+Przykład – pozycja raportu „koszty wynagrodzeń” o wartości bezwzględnej 100 tyś dla wykonania i wartości bezwzględnej 102 tyś dla budżetu. Jakie znaki dla tych wartości najchętniej Pani/Pani zastosuje na swoich raportach?
+
+Przykład – pozycja raportu „dotacje – pomniejsze kosztów wynagrodzeń” o wartości bezwzględnej 20 tyś dla wykonania i wartości bezwzględnej 18,5 tyś dla budżetu. Jakie znaki dla tych wartości najchętniej Pani/Pani zastosuje na swoich raportach?
+Przykład – pozycja raportu „przychody - sprzedaż towarów” o wartości bezwzględnej 56 tyś dla wykonania i wartości bezwzględnej 70 tyś dla budżetu. Jakie znaki dla tych wartości najchętniej Pani/Pani zastosuje na swoich raportach?
+ 
+Proszę o podanie wzoru zgodnie z udzielonymi wcześniej odpowiedziami na odchylenie od budżetu % i wartościowe wraz z sposobem zwrócenia uwagi na negatywne przekroczenia (niedotrzymania celów budżetowych).
+
+Odpowiedź:
+Oto moja propozycja:
+ 
+Poniżej zastosowane formuły:
+ 
